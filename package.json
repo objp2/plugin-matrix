@@ -1,5 +1,5 @@
 {
-  "name": "github:objp2/plugin-matrix",
+  "name": "@elizaos/plugin-matrix",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
