@@ -368,6 +368,18 @@ export class MatrixService extends Service implements IMatrixService {
   }
 
   /**
+   * Helper function to escape HTML characters for Matrix formatted messages
+   */
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  /**
    * Helper function to split a string into chunks of a maximum length.
    */
   private splitMessage(text: string, maxLength: number): string[] {
@@ -617,10 +629,29 @@ export class MatrixService extends Service implements IMatrixService {
             // Split long messages
             const chunks = this.splitMessage(content.text, 4096);
             for (const chunk of chunks) {
-              await this.client?.sendMessage(roomId, {
+              // Format as Matrix reply with proper m.relates_to field
+              const replyBody = `> <${event.sender}> ${messageContent.body}\n\n${chunk}`;
+
+              // Create proper Matrix reply format
+              const messageData: any = {
                 msgtype: MATRIX_MESSAGE_TYPES.TEXT,
-                body: chunk,
-              });
+                body: replyBody,
+                "m.relates_to": {
+                  "m.in_reply_to": {
+                    event_id: event.event_id,
+                  },
+                },
+              };
+
+              // Add formatted HTML body for better client support only if displayName is available
+              if (displayName && displayName !== event.sender) {
+                const escapedBody = this.escapeHtml(messageContent.body);
+                const escapedChunk = this.escapeHtml(chunk);
+                messageData.format = "org.matrix.custom.html";
+                messageData.formatted_body = `<mx-reply><blockquote><a href="https://matrix.to/#/${roomId}/${event.event_id}">In reply to</a> <a href="https://matrix.to/#/${event.sender}">${this.escapeHtml(displayName)}</a><br>${escapedBody}</blockquote></mx-reply>${escapedChunk}`;
+              }
+
+              await this.client?.sendMessage(roomId, messageData);
             }
           }
         } catch (error) {
@@ -809,11 +840,21 @@ export class MatrixService extends Service implements IMatrixService {
     };
 
     const callback: HandlerCallback = async (content): Promise<Memory[]> => {
-      if (content.text) {
-        await this.client?.sendMessage(roomId, {
-          msgtype: MATRIX_MESSAGE_TYPES.TEXT,
-          body: content.text,
-        });
+      try {
+        if (content.text) {
+          // For reactions, we don't format as a reply since reactions are already contextual
+          const chunks = this.splitMessage(content.text, 4096);
+          for (const chunk of chunks) {
+            await this.client?.sendMessage(roomId, {
+              msgtype: MATRIX_MESSAGE_TYPES.TEXT,
+              body: chunk,
+            });
+          }
+        }
+      } catch (error) {
+        this.runtime.logger.error(
+          `Error sending response to reaction: ${error}`,
+        );
       }
       return [];
     };

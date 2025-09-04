@@ -207,13 +207,20 @@ describe('Matrix Message Forwarding', () => {
       // Test the callback with a response
       await callback({ text: 'Bot response' });
 
-      // Verify the bot sent a response message
+      // Verify the bot sent a response message formatted as a proper Matrix reply
       expect(service.client?.sendMessage).toHaveBeenCalledWith(
         '!room:matrix.org',
-        {
+        expect.objectContaining({
           msgtype: 'm.text',
-          body: 'Bot response'
-        }
+          body: '> <@user:matrix.org> Hello, world!\n\nBot response',
+          'm.relates_to': {
+            'm.in_reply_to': {
+              event_id: '$event123:matrix.org'
+            }
+          },
+          format: 'org.matrix.custom.html',
+          formatted_body: expect.stringContaining('<mx-reply>')
+        })
       );
     });
 
