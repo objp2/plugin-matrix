@@ -678,11 +678,20 @@ export class MatrixService extends Service implements IMatrixService {
 
       const roomUUID = createUniqueUuid(this.runtime, roomId);
 
+      // Create a World object for the event
+      const world: World = {
+        id: roomUUID,
+        name: room.name || roomId,
+        agentId: this.runtime.agentId,
+        serverId: "matrix",
+      };
+
       this.runtime.emitEvent(
         [MatrixEventTypes.ROOM_JOINED, EventType.WORLD_JOINED],
         {
           runtime: this.runtime,
           worldId: roomUUID,
+          world,
           room,
           source: "matrix",
         },
@@ -727,12 +736,20 @@ export class MatrixService extends Service implements IMatrixService {
 
           const roomUUID = createUniqueUuid(this.runtime, roomId);
 
+          // Create a World object for the event
+          const world: World = {
+            id: roomUUID,
+            name: room.name || roomId,
+            agentId: this.runtime.agentId,
+            serverId: "matrix",
+          };
+
           this.runtime.emitEvent(
             [MatrixEventTypes.ROOM_JOINED, EventType.WORLD_CONNECTED],
             {
               runtime: this.runtime,
               worldId: roomUUID,
-              name: room.name || roomId,
+              world,
               room,
               source: "matrix",
             },
