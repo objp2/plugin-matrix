@@ -459,6 +459,8 @@ export class MatrixService extends Service implements IMatrixService {
           await this.handleMemberEvent(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.REACTION) {
           await this.handleReactionEvent(roomId, event);
+        } else if (event.type === MATRIX_EVENT_TYPES.ENCRYPTED) {
+          await this.handleEncryptedMessage(roomId, event);
         }
       } catch (error) {
         this.runtime.logger.error(`Error handling room event: ${error}`);
@@ -488,42 +490,199 @@ export class MatrixService extends Service implements IMatrixService {
    * Handle room messages
    */
   private async handleRoomMessage(roomId: string, event: MatrixEvent) {
-    // Skip if we're sending the message
-    if (event.sender === (await this.client?.getUserId())) {
-      return;
-    }
-
-    // Skip if room restrictions are set and this room is not allowed
-    if (this.allowedRoomIds && !this.isRoomAllowed(roomId)) {
-      return;
-    }
-
-    // Skip bot messages if configured
-    if (
-      this.matrixSettings.shouldIgnoreBotMessages &&
-      event.sender.includes("bot")
-    ) {
-      return;
-    }
-
-    const messageContent = event.content as MessageEventContent;
-    if (
-      !messageContent ||
-      messageContent.msgtype !== MATRIX_MESSAGE_TYPES.TEXT
-    ) {
-      return;
-    }
-
     try {
-      const room = await this.getRoomInfo(roomId);
+      // Skip if we're sending the message
+      if (event.sender === (await this.client?.getUserId())) {
+        return;
+      }
 
+      // Skip if room restrictions are set and this room is not allowed
+      if (this.allowedRoomIds && !this.isRoomAllowed(roomId)) {
+        return;
+      }
+
+      // Skip bot messages if configured
+      if (
+        this.matrixSettings.shouldIgnoreBotMessages &&
+        event.sender.includes("bot")
+      ) {
+        return;
+      }
+
+      const messageContent = event.content as MessageEventContent;
+      if (!messageContent) {
+        return;
+      }
+
+      // Handle supported message types
+      const supportedTypes = [
+        MATRIX_MESSAGE_TYPES.TEXT,
+        MATRIX_MESSAGE_TYPES.EMOTE,
+        MATRIX_MESSAGE_TYPES.NOTICE,
+        MATRIX_MESSAGE_TYPES.IMAGE,
+        MATRIX_MESSAGE_TYPES.FILE,
+        MATRIX_MESSAGE_TYPES.AUDIO,
+        MATRIX_MESSAGE_TYPES.VIDEO,
+      ];
+
+      if (!supportedTypes.includes(messageContent.msgtype)) {
+        if (messageContent.msgtype) {
+          this.runtime.logger.debug(
+            `Received unsupported message type ${messageContent.msgtype} in room ${roomId}`,
+          );
+        }
+        return;
+      }
+
+      const room = await this.getRoomInfo(roomId);
       const roomUUID = createUniqueUuid(this.runtime, roomId);
       const entityId = createUniqueUuid(this.runtime, event.sender);
       const messageUUID = createUniqueUuid(this.runtime, event.event_id);
 
       // Get user display name
-      const senderProfile = await this.client?.getUserProfile(event.sender);
-      const displayName = senderProfile?.displayname || event.sender;
+      let displayName: string;
+      try {
+        const senderProfile = await this.client?.getUserProfile(event.sender);
+        displayName = senderProfile?.displayname || event.sender;
+      } catch (error) {
+        this.runtime.logger.warn(
+          `Failed to get profile for ${event.sender}: ${error}`,
+        );
+        displayName = event.sender;
+      }
+
+      await this.runtime.ensureConnection({
+        entityId,
+        roomId: roomUUID,
+        userName: event.sender,
+        worldId: roomUUID as UUID,
+        worldName: room.name || roomId,
+        name: displayName,
+        source: "matrix",
+        channelId: roomId,
+        type: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
+      });
+
+      // Format message text based on type
+      let messageText = messageContent.body;
+      let isMediaMessage = false;
+
+      if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.EMOTE) {
+        messageText = `*${event.sender} ${messageContent.body}*`;
+      } else if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.NOTICE) {
+        messageText = `[Notice] ${messageContent.body}`;
+      } else if ([
+        MATRIX_MESSAGE_TYPES.IMAGE,
+        MATRIX_MESSAGE_TYPES.FILE,
+        MATRIX_MESSAGE_TYPES.AUDIO,
+        MATRIX_MESSAGE_TYPES.VIDEO,
+      ].includes(messageContent.msgtype)) {
+        isMediaMessage = true;
+        const mediaType = messageContent.msgtype.replace('m.', '');
+        messageText = `[${mediaType.toUpperCase()}] ${messageContent.body || `Shared a ${mediaType}`}`;
+        
+        // Add media URL info if available
+        if (messageContent.url) {
+          messageText += ` (${messageContent.url})`;
+        }
+      }
+
+      const memory: Memory = {
+        id: messageUUID,
+        entityId,
+        agentId: this.runtime.agentId,
+        content: {
+          text: messageText,
+          source: "matrix",
+          channelType: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
+          metadata: {
+            messageType: messageContent.msgtype,
+            originalEvent: event.event_id,
+            roomId: roomId,
+            isMedia: isMediaMessage,
+            mediaUrl: messageContent.url,
+            mimeType: messageContent.info?.mimetype,
+            fileSize: messageContent.info?.size,
+          },
+        },
+        roomId: roomUUID,
+        createdAt: event.origin_server_ts || Date.now(),
+      };
+
+      const callback: HandlerCallback = async (content): Promise<Memory[]> => {
+        try {
+          if (content.text) {
+            // Split long messages
+            const chunks = this.splitMessage(content.text, 4096);
+            for (const chunk of chunks) {
+              await this.client?.sendMessage(roomId, {
+                msgtype: MATRIX_MESSAGE_TYPES.TEXT,
+                body: chunk,
+              });
+            }
+          }
+        } catch (error) {
+          this.runtime.logger.error(
+            `Error sending response message: ${error}`,
+          );
+        }
+        return [];
+      };
+
+      this.runtime.emitEvent(
+        [MatrixEventTypes.MESSAGE_RECEIVED, "MESSAGE_RECEIVED"],
+        {
+          runtime: this.runtime,
+          message: memory,
+          callback,
+          originalEvent: event,
+          room,
+        },
+      );
+
+      this.runtime.logger.debug(
+        `Forwarded ${messageContent.msgtype} message from ${event.sender} in room ${roomId} to ElizaOS`,
+      );
+    } catch (error) {
+      this.runtime.logger.error(
+        `Error processing message from ${event.sender} in room ${roomId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Handle encrypted messages
+   */
+  private async handleEncryptedMessage(roomId: string, event: MatrixEvent) {
+    try {
+      // Skip if we're sending the message
+      if (event.sender === (await this.client?.getUserId())) {
+        return;
+      }
+
+      // Skip if room restrictions are set and this room is not allowed
+      if (this.allowedRoomIds && !this.isRoomAllowed(roomId)) {
+        return;
+      }
+
+      this.runtime.logger.debug(
+        `Received encrypted message from ${event.sender} in room ${roomId}`,
+      );
+
+      // For encrypted messages that couldn't be decrypted, we still forward a notification
+      const room = await this.getRoomInfo(roomId);
+      const roomUUID = createUniqueUuid(this.runtime, roomId);
+      const entityId = createUniqueUuid(this.runtime, event.sender);
+      const messageUUID = createUniqueUuid(this.runtime, event.event_id);
+
+      // Get user display name
+      let displayName: string;
+      try {
+        const senderProfile = await this.client?.getUserProfile(event.sender);
+        displayName = senderProfile?.displayname || event.sender;
+      } catch (error) {
+        displayName = event.sender;
+      }
 
       await this.runtime.ensureConnection({
         entityId,
@@ -542,36 +701,39 @@ export class MatrixService extends Service implements IMatrixService {
         entityId,
         agentId: this.runtime.agentId,
         content: {
-          text: messageContent.body,
+          text: "[Encrypted message - content not available]",
           source: "matrix",
           channelType: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
+          metadata: {
+            messageType: "m.room.encrypted",
+            originalEvent: event.event_id,
+            roomId: roomId,
+            isEncrypted: true,
+          },
         },
         roomId: roomUUID,
         createdAt: event.origin_server_ts || Date.now(),
       };
 
-      const callback: HandlerCallback = async (content): Promise<Memory[]> => {
-        if (content.text) {
-          await this.client?.sendMessage(roomId, {
-            msgtype: MATRIX_MESSAGE_TYPES.TEXT,
-            body: content.text,
-          });
-        }
-        return [];
-      };
-
+      // Don't provide callback for encrypted messages we can't decrypt
       this.runtime.emitEvent(
         [MatrixEventTypes.MESSAGE_RECEIVED, "MESSAGE_RECEIVED"],
         {
           runtime: this.runtime,
           message: memory,
-          callback,
+          callback: async () => [],
           originalEvent: event,
           room,
         },
       );
+
+      this.runtime.logger.debug(
+        `Forwarded encrypted message notification from ${event.sender} in room ${roomId} to ElizaOS`,
+      );
     } catch (error) {
-      this.runtime.logger.error(`Error processing message: ${error}`);
+      this.runtime.logger.error(
+        `Error processing encrypted message from ${event.sender} in room ${roomId}: ${error}`,
+      );
     }
   }
 
