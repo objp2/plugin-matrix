@@ -571,16 +571,18 @@ export class MatrixService extends Service implements IMatrixService {
         messageText = `*${event.sender} ${messageContent.body}*`;
       } else if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.NOTICE) {
         messageText = `[Notice] ${messageContent.body}`;
-      } else if ([
-        MATRIX_MESSAGE_TYPES.IMAGE,
-        MATRIX_MESSAGE_TYPES.FILE,
-        MATRIX_MESSAGE_TYPES.AUDIO,
-        MATRIX_MESSAGE_TYPES.VIDEO,
-      ].includes(messageContent.msgtype)) {
+      } else if (
+        [
+          MATRIX_MESSAGE_TYPES.IMAGE,
+          MATRIX_MESSAGE_TYPES.FILE,
+          MATRIX_MESSAGE_TYPES.AUDIO,
+          MATRIX_MESSAGE_TYPES.VIDEO,
+        ].includes(messageContent.msgtype)
+      ) {
         isMediaMessage = true;
-        const mediaType = messageContent.msgtype.replace('m.', '');
+        const mediaType = messageContent.msgtype.replace("m.", "");
         messageText = `[${mediaType.toUpperCase()}] ${messageContent.body || `Shared a ${mediaType}`}`;
-        
+
         // Add media URL info if available
         if (messageContent.url) {
           messageText += ` (${messageContent.url})`;
@@ -622,9 +624,7 @@ export class MatrixService extends Service implements IMatrixService {
             }
           }
         } catch (error) {
-          this.runtime.logger.error(
-            `Error sending response message: ${error}`,
-          );
+          this.runtime.logger.error(`Error sending response message: ${error}`);
         }
         return [];
       };
