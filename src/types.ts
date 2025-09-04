@@ -1,28 +1,33 @@
-import type { Character, EntityPayload, MessagePayload, WorldPayload } from '@elizaos/core';
-import type { MatrixClient, MatrixEvent } from 'matrix-bot-sdk';
+import type {
+  Character,
+  EntityPayload,
+  MessagePayload,
+  WorldPayload,
+} from "@elizaos/core";
+import type { MatrixClient, MatrixEvent } from "matrix-bot-sdk";
 
 /**
  * Matrix-specific event types
  */
 export enum MatrixEventTypes {
   // Message events
-  MESSAGE_RECEIVED = 'MATRIX_MESSAGE_RECEIVED',
-  MESSAGE_SENT = 'MATRIX_MESSAGE_SENT',
+  MESSAGE_RECEIVED = "MATRIX_MESSAGE_RECEIVED",
+  MESSAGE_SENT = "MATRIX_MESSAGE_SENT",
 
   // Reaction events
-  REACTION_RECEIVED = 'MATRIX_REACTION_RECEIVED',
-  REACTION_REMOVED = 'MATRIX_REACTION_REMOVED',
+  REACTION_RECEIVED = "MATRIX_REACTION_RECEIVED",
+  REACTION_REMOVED = "MATRIX_REACTION_REMOVED",
 
   // Room events
-  ROOM_JOINED = 'MATRIX_ROOM_JOINED',
-  ROOM_LEFT = 'MATRIX_ROOM_LEFT',
+  ROOM_JOINED = "MATRIX_ROOM_JOINED",
+  ROOM_LEFT = "MATRIX_ROOM_LEFT",
 
   // User events
-  USER_JOINED = 'MATRIX_USER_JOINED',
-  USER_LEFT = 'MATRIX_USER_LEFT',
+  USER_JOINED = "MATRIX_USER_JOINED",
+  USER_LEFT = "MATRIX_USER_LEFT",
 
   // State events
-  STATE_CHANGED = 'MATRIX_STATE_CHANGED',
+  STATE_CHANGED = "MATRIX_STATE_CHANGED",
 }
 
 /**
@@ -107,10 +112,10 @@ export interface IMatrixService {
   character: Character;
 }
 
-export const MATRIX_SERVICE_NAME = 'matrix';
+export const MATRIX_SERVICE_NAME = "matrix";
 
 export const ServiceType = {
-  MATRIX: 'matrix',
+  MATRIX: "matrix",
 } as const;
 
 /**
