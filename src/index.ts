@@ -4,8 +4,11 @@ import { type IAgentRuntime, type Plugin, logger } from '@elizaos/core';
 import sendMessage from './actions/sendMessage';
 import reactToMessage from './actions/reactToMessage';
 import joinRoom from './actions/joinRoom';
+import leaveRoom from './actions/leaveRoom';
 import uploadMedia from './actions/uploadMedia';
 import downloadMedia from './actions/downloadMedia';
+import enableEncryption from './actions/enableEncryption';
+import listRooms from './actions/listRooms';
 
 // Import providers
 import roomStateProvider from './providers/roomState';
@@ -25,8 +28,11 @@ const matrixPlugin: Plugin = {
     sendMessage,
     reactToMessage,
     joinRoom,
+    leaveRoom,
     uploadMedia,
     downloadMedia,
+    enableEncryption,
+    listRooms,
   ],
   providers: [
     roomStateProvider,
