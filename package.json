@@ -1,0 +1,82 @@
+{
+  "name": "@elizaos/plugin-matrix",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/objp2/plugin-matrix.git"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@elizaos/core": "^1.0.4",
+    "matrix-bot-sdk": "^0.7.1",
+    "typescript": "^5.8.3",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "prettier": "3.5.3",
+    "tsup": "8.4.0",
+    "vitest": "1.6.1"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "elizaos test",
+    "lint": "prettier --write ./src",
+    "clean": "rm -rf dist .turbo node_modules .turbo-tsconfig.json tsconfig.tsbuildinfo",
+    "format": "prettier --write ./src",
+    "format:check": "prettier --check ./src"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "agentConfig": {
+    "pluginType": "elizaos:plugin:1.0.0",
+    "pluginParameters": {
+      "MATRIX_HOMESERVER_URL": {
+        "type": "string",
+        "description": "Matrix homeserver URL (e.g., https://matrix.org)",
+        "required": true,
+        "sensitive": false
+      },
+      "MATRIX_ACCESS_TOKEN": {
+        "type": "string",
+        "description": "Matrix access token for authentication",
+        "required": true,
+        "sensitive": true
+      },
+      "MATRIX_USER_ID": {
+        "type": "string",
+        "description": "Matrix user ID (e.g., @bot:matrix.org)",
+        "required": true,
+        "sensitive": false
+      },
+      "MATRIX_ROOM_IDS": {
+        "type": "string",
+        "description": "Comma-separated list of Matrix room IDs to monitor",
+        "required": false,
+        "sensitive": false
+      },
+      "MATRIX_ENCRYPTION_ENABLED": {
+        "type": "boolean",
+        "description": "Enable end-to-end encryption support",
+        "required": false,
+        "sensitive": false
+      }
+    }
+  }
+}
