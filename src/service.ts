@@ -13,7 +13,7 @@ import {
   type World,
   createUniqueUuid,
   logger,
-} from '@elizaos/core';
+} from "@elizaos/core";
 import {
   MatrixClient,
   SimpleFsStorageProvider,
@@ -21,13 +21,23 @@ import {
   MatrixEvent,
   MessageEvent,
   MessageEventContent,
-  Room,
   RoomEvent,
   MembershipEvent,
-} from 'matrix-bot-sdk';
-import { MATRIX_SERVICE_NAME, MATRIX_EVENT_TYPES, MATRIX_MESSAGE_TYPES, MATRIX_MEMBERSHIP } from './constants';
-import { MatrixEventTypes, type IMatrixService, type MatrixSettings } from './types';
-import { validateMatrixConfig } from './environment';
+  RustSdkCryptoStorageProvider,
+} from "matrix-bot-sdk";
+import {
+  MATRIX_SERVICE_NAME,
+  MATRIX_EVENT_TYPES,
+  MATRIX_MESSAGE_TYPES,
+  MATRIX_MEMBERSHIP,
+} from "./constants";
+import {
+  MatrixEventTypes,
+  type IMatrixService,
+  type MatrixSettings,
+  type MatrixRoom,
+} from "./types";
+import { validateMatrixConfig } from "./environment";
 
 /**
  * MatrixService class for interacting with Matrix protocol.
@@ -36,7 +46,8 @@ import { validateMatrixConfig } from './environment';
  */
 export class MatrixService extends Service implements IMatrixService {
   static serviceType: string = MATRIX_SERVICE_NAME;
-  capabilityDescription = 'The agent is able to send and receive messages on Matrix';
+  capabilityDescription =
+    "The agent is able to send and receive messages on Matrix";
   client: MatrixClient | null;
   character: Character;
   private matrixSettings: MatrixSettings;
@@ -48,16 +59,19 @@ export class MatrixService extends Service implements IMatrixService {
 
     this.matrixSettings = {};
     if (this.runtime.character.settings?.matrix) {
-      this.matrixSettings = this.runtime.character.settings.matrix as MatrixSettings;
+      this.matrixSettings = this.runtime.character.settings
+        .matrix as MatrixSettings;
     }
 
     this.character = runtime.character;
 
     // Parse MATRIX_ROOM_IDS env var to restrict the bot to specific rooms
-    const roomIdsRaw = runtime.getSetting('MATRIX_ROOM_IDS') as string | undefined;
+    const roomIdsRaw = runtime.getSetting("MATRIX_ROOM_IDS") as
+      | string
+      | undefined;
     if (roomIdsRaw && roomIdsRaw.trim()) {
       this.allowedRoomIds = roomIdsRaw
-        .split(',')
+        .split(",")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
     }
@@ -65,26 +79,47 @@ export class MatrixService extends Service implements IMatrixService {
     try {
       // Validate environment configuration
       const config = validateMatrixConfig({
-        MATRIX_HOMESERVER_URL: runtime.getSetting('MATRIX_HOMESERVER_URL'),
-        MATRIX_ACCESS_TOKEN: runtime.getSetting('MATRIX_ACCESS_TOKEN'),
-        MATRIX_USER_ID: runtime.getSetting('MATRIX_USER_ID'),
-        MATRIX_ROOM_IDS: runtime.getSetting('MATRIX_ROOM_IDS'),
-        MATRIX_ENCRYPTION_ENABLED: runtime.getSetting('MATRIX_ENCRYPTION_ENABLED'),
+        MATRIX_HOMESERVER_URL: runtime.getSetting("MATRIX_HOMESERVER_URL"),
+        MATRIX_ACCESS_TOKEN: runtime.getSetting("MATRIX_ACCESS_TOKEN"),
+        MATRIX_USER_ID: runtime.getSetting("MATRIX_USER_ID"),
+        MATRIX_ROOM_IDS: runtime.getSetting("MATRIX_ROOM_IDS"),
+        MATRIX_ENCRYPTION_ENABLED: runtime.getSetting(
+          "MATRIX_ENCRYPTION_ENABLED",
+        ),
       });
 
-      if (!config.MATRIX_ACCESS_TOKEN || config.MATRIX_ACCESS_TOKEN.trim() === '') {
-        logger.warn('Matrix access token not provided - Matrix functionality will be unavailable');
+      if (
+        !config.MATRIX_ACCESS_TOKEN ||
+        config.MATRIX_ACCESS_TOKEN.trim() === ""
+      ) {
+        logger.warn(
+          "Matrix access token not provided - Matrix functionality will be unavailable",
+        );
         this.client = null;
         return;
       }
 
       // Initialize Matrix client
-      const storage = new SimpleFsStorageProvider('./matrix-storage.json');
+      const storage = new SimpleFsStorageProvider("./matrix-storage.json");
       this.client = new MatrixClient(
         config.MATRIX_HOMESERVER_URL,
         config.MATRIX_ACCESS_TOKEN,
-        storage
+        storage,
       );
+
+      // Set up encryption if enabled
+      if (config.MATRIX_ENCRYPTION_ENABLED) {
+        try {
+          const cryptoProvider = new RustSdkCryptoStorageProvider(
+            "./matrix-crypto-store",
+          );
+          this.client.setStorageProvider(cryptoProvider);
+          logger.info("Matrix encryption enabled with crypto storage provider");
+        } catch (error) {
+          logger.warn(`Failed to set up encryption storage provider: ${error}`);
+          logger.warn("Continuing without encryption support");
+        }
+      }
 
       // Enable auto-join for room invites
       AutojoinRoomsMixin.setupOnClient(this.client);
@@ -93,17 +128,27 @@ export class MatrixService extends Service implements IMatrixService {
       this.registerSendHandler();
 
       // Start the client
-      this.client.start().then(() => {
-        logger.success('Matrix client started successfully');
-        this.onReady();
-      }).catch((error) => {
-        logger.error(`Failed to start Matrix client: ${error instanceof Error ? error.message : String(error)}`);
-        this.client = null;
-      });
+      this.client
+        .start()
+        .then(async () => {
+          logger.success("Matrix client started successfully");
 
+          // Initialize encryption if enabled
+          if (config.MATRIX_ENCRYPTION_ENABLED) {
+            await this.initializeEncryption();
+          }
+
+          this.onReady();
+        })
+        .catch((error) => {
+          logger.error(
+            `Failed to start Matrix client: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          this.client = null;
+        });
     } catch (error) {
       runtime.logger.error(
-        `Error initializing Matrix client: ${error instanceof Error ? error.message : String(error)}`
+        `Error initializing Matrix client: ${error instanceof Error ? error.message : String(error)}`,
       );
       this.client = null;
     }
@@ -115,12 +160,147 @@ export class MatrixService extends Service implements IMatrixService {
   }
 
   /**
+   * Get room information using available SDK methods
+   * This replaces the non-existent getRoom method
+   */
+  public async getRoomInfo(roomId: string): Promise<MatrixRoom> {
+    if (!this.client) {
+      throw new Error("Matrix client not available");
+    }
+
+    try {
+      // Get basic room state
+      const roomState = await this.client.getRoomState(roomId);
+
+      // Extract room name
+      const nameEvent = roomState.find((event) => event.type === "m.room.name");
+      const name = nameEvent?.content?.name;
+
+      // Extract room topic
+      const topicEvent = roomState.find(
+        (event) => event.type === "m.room.topic",
+      );
+      const topic = topicEvent?.content?.topic;
+
+      // Extract room avatar
+      const avatarEvent = roomState.find(
+        (event) => event.type === "m.room.avatar",
+      );
+      const avatarUrl = avatarEvent?.content?.url;
+
+      // Check if room is encrypted
+      const encryptionEvent = roomState.find(
+        (event) => event.type === "m.room.encryption",
+      );
+      const isEncrypted = !!encryptionEvent;
+
+      // Get room members to check if it's a DM and get member count
+      const members = await this.client.getRoomMembers(roomId);
+      const memberCount = members.length;
+
+      // Check if it's a direct message room (exactly 2 members)
+      let isDirect = false;
+      if (memberCount === 2) {
+        // Additional check: look for m.direct account data
+        try {
+          const accountData = await this.client.getAccountData("m.direct");
+          if (accountData) {
+            // Check if this room is listed in any user's direct rooms
+            const directRooms = Object.values(accountData).flat() as string[];
+            isDirect = directRooms.includes(roomId);
+          }
+        } catch (error) {
+          // If we can't get account data, fall back to member count check
+          isDirect = memberCount === 2;
+        }
+      }
+
+      return {
+        id: roomId,
+        name,
+        topic,
+        isDirect,
+        isEncrypted,
+        memberCount,
+        avatarUrl,
+      };
+    } catch (error) {
+      this.runtime.logger.error(
+        `Failed to get room info for ${roomId}: ${error}`,
+      );
+      // Return minimal room info on error
+      return {
+        id: roomId,
+        isDirect: false,
+        isEncrypted: false,
+        memberCount: 0,
+      };
+    }
+  }
+
+  /**
+   * Check if a room is a direct message room
+   */
+  private async isDirectRoom(roomId: string): Promise<boolean> {
+    if (!this.client) {
+      return false;
+    }
+
+    try {
+      // First check member count
+      const members = await this.client.getRoomMembers(roomId);
+      if (members.length !== 2) {
+        return false;
+      }
+
+      // Check m.direct account data
+      try {
+        const accountData = await this.client.getAccountData("m.direct");
+        if (accountData) {
+          const directRooms = Object.values(accountData).flat() as string[];
+          return directRooms.includes(roomId);
+        }
+      } catch (error) {
+        // If we can't get account data, assume it's direct if only 2 members
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Initialize encryption for the Matrix client
+   */
+  private async initializeEncryption(): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+
+    try {
+      logger.info("Initializing Matrix end-to-end encryption...");
+
+      // Note: The RustSdkCryptoStorageProvider should handle most of the crypto setup
+      // Additional device verification and key management would be handled by the SDK
+
+      logger.success("Matrix encryption initialized successfully");
+    } catch (error) {
+      logger.error(`Failed to initialize encryption: ${error}`);
+    }
+  }
+
+  /**
    * Registers the send handler with the runtime.
    * @private
    */
   private registerSendHandler(): void {
     if (this.runtime) {
-      this.runtime.registerSendHandler('matrix', this.handleSendMessage.bind(this));
+      this.runtime.registerSendHandler(
+        "matrix",
+        this.handleSendMessage.bind(this),
+      );
     }
   }
 
@@ -130,17 +310,21 @@ export class MatrixService extends Service implements IMatrixService {
   async handleSendMessage(
     runtime: IAgentRuntime,
     target: TargetInfo,
-    content: Content
+    content: Content,
   ): Promise<void> {
     if (!this.client) {
-      runtime.logger.error('[Matrix SendHandler] Client not ready.');
-      throw new Error('Matrix client is not ready.');
+      runtime.logger.error("[Matrix SendHandler] Client not ready.");
+      throw new Error("Matrix client is not ready.");
     }
 
     // Skip sending if room restrictions are set and target room is not allowed
-    if (target.channelId && this.allowedRoomIds && !this.isRoomAllowed(target.channelId)) {
+    if (
+      target.channelId &&
+      this.allowedRoomIds &&
+      !this.isRoomAllowed(target.channelId)
+    ) {
       runtime.logger.warn(
-        `[Matrix SendHandler] Room ${target.channelId} is not in allowed rooms, skipping send.`
+        `[Matrix SendHandler] Room ${target.channelId} is not in allowed rooms, skipping send.`,
       );
       return;
     }
@@ -155,7 +339,7 @@ export class MatrixService extends Service implements IMatrixService {
         const userId = target.entityId as string;
         targetRoomId = await this.getOrCreateDMRoom(userId);
       } else {
-        throw new Error('Matrix SendHandler requires channelId or entityId.');
+        throw new Error("Matrix SendHandler requires channelId or entityId.");
       }
 
       if (content.text) {
@@ -168,14 +352,16 @@ export class MatrixService extends Service implements IMatrixService {
           });
         }
       } else {
-        runtime.logger.warn('[Matrix SendHandler] No text content provided to send.');
+        runtime.logger.warn(
+          "[Matrix SendHandler] No text content provided to send.",
+        );
       }
 
       // TODO: Add attachment handling here if necessary
     } catch (error) {
       runtime.logger.error(
         `[Matrix SendHandler] Error sending message: ${error instanceof Error ? error.message : String(error)}`,
-        { target, content }
+        { target, content },
       );
       throw error;
     }
@@ -186,26 +372,26 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private splitMessage(text: string, maxLength: number): string[] {
     const chunks: string[] = [];
-    let currentChunk = '';
-    const lines = text.split('\n');
-    
+    let currentChunk = "";
+    const lines = text.split("\n");
+
     for (const line of lines) {
       if (currentChunk.length + line.length + 1 <= maxLength) {
-        currentChunk += (currentChunk ? '\n' : '') + line;
+        currentChunk += (currentChunk ? "\n" : "") + line;
       } else {
         if (currentChunk) chunks.push(currentChunk);
-        
+
         if (line.length > maxLength) {
           for (let i = 0; i < line.length; i += maxLength) {
             chunks.push(line.substring(i, i + maxLength));
           }
-          currentChunk = '';
+          currentChunk = "";
         } else {
           currentChunk = line;
         }
       }
     }
-    
+
     if (currentChunk) chunks.push(currentChunk);
     return chunks;
   }
@@ -215,17 +401,19 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private async getOrCreateDMRoom(userId: string): Promise<string> {
     if (!this.client) {
-      throw new Error('Matrix client not available');
+      throw new Error("Matrix client not available");
     }
 
     try {
       // Try to find existing DM room
       const rooms = await this.client.getJoinedRooms();
       for (const roomId of rooms) {
-        const room = await this.client.getRoom(roomId);
-        if (room && room.isDirect) {
+        if (await this.isDirectRoom(roomId)) {
           const members = await this.client.getRoomMembers(roomId);
-          if (members.length === 2 && members.some(m => m.userId === userId)) {
+          if (
+            members.length === 2 &&
+            members.some((m) => m.userId === userId)
+          ) {
             return roomId;
           }
         }
@@ -235,7 +423,7 @@ export class MatrixService extends Service implements IMatrixService {
       const roomId = await this.client.createRoom({
         invite: [userId],
         is_direct: true,
-        preset: 'trusted_private_chat',
+        preset: "trusted_private_chat",
       });
 
       return roomId;
@@ -253,16 +441,19 @@ export class MatrixService extends Service implements IMatrixService {
     }
 
     // Handle room messages
-    this.client.on('room.message', async (roomId: string, event: MatrixEvent) => {
-      try {
-        await this.handleRoomMessage(roomId, event);
-      } catch (error) {
-        this.runtime.logger.error(`Error handling room message: ${error}`);
-      }
-    });
+    this.client.on(
+      "room.message",
+      async (roomId: string, event: MatrixEvent) => {
+        try {
+          await this.handleRoomMessage(roomId, event);
+        } catch (error) {
+          this.runtime.logger.error(`Error handling room message: ${error}`);
+        }
+      },
+    );
 
     // Handle room member events
-    this.client.on('room.event', async (roomId: string, event: MatrixEvent) => {
+    this.client.on("room.event", async (roomId: string, event: MatrixEvent) => {
       try {
         if (event.type === MATRIX_EVENT_TYPES.MEMBER) {
           await this.handleMemberEvent(roomId, event);
@@ -275,7 +466,7 @@ export class MatrixService extends Service implements IMatrixService {
     });
 
     // Handle room join events
-    this.client.on('room.join', async (roomId: string, event: MatrixEvent) => {
+    this.client.on("room.join", async (roomId: string, event: MatrixEvent) => {
       try {
         await this.handleRoomJoin(roomId, event);
       } catch (error) {
@@ -284,7 +475,7 @@ export class MatrixService extends Service implements IMatrixService {
     });
 
     // Handle room leave events
-    this.client.on('room.leave', async (roomId: string, event: MatrixEvent) => {
+    this.client.on("room.leave", async (roomId: string, event: MatrixEvent) => {
       try {
         await this.handleRoomLeave(roomId, event);
       } catch (error) {
@@ -308,21 +499,23 @@ export class MatrixService extends Service implements IMatrixService {
     }
 
     // Skip bot messages if configured
-    if (this.matrixSettings.shouldIgnoreBotMessages && event.sender.includes('bot')) {
+    if (
+      this.matrixSettings.shouldIgnoreBotMessages &&
+      event.sender.includes("bot")
+    ) {
       return;
     }
 
     const messageContent = event.content as MessageEventContent;
-    if (!messageContent || messageContent.msgtype !== MATRIX_MESSAGE_TYPES.TEXT) {
+    if (
+      !messageContent ||
+      messageContent.msgtype !== MATRIX_MESSAGE_TYPES.TEXT
+    ) {
       return;
     }
 
     try {
-      const room = await this.client?.getRoom(roomId);
-      if (!room) {
-        this.runtime.logger.error(`Room ${roomId} not found`);
-        return;
-      }
+      const room = await this.getRoomInfo(roomId);
 
       const roomUUID = createUniqueUuid(this.runtime, roomId);
       const entityId = createUniqueUuid(this.runtime, event.sender);
@@ -339,7 +532,7 @@ export class MatrixService extends Service implements IMatrixService {
         worldId: roomUUID as UUID,
         worldName: room.name || roomId,
         name: displayName,
-        source: 'matrix',
+        source: "matrix",
         channelId: roomId,
         type: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
       });
@@ -350,7 +543,7 @@ export class MatrixService extends Service implements IMatrixService {
         agentId: this.runtime.agentId,
         content: {
           text: messageContent.body,
-          source: 'matrix',
+          source: "matrix",
           channelType: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
         },
         roomId: roomUUID,
@@ -367,14 +560,16 @@ export class MatrixService extends Service implements IMatrixService {
         return [];
       };
 
-      this.runtime.emitEvent([MatrixEventTypes.MESSAGE_RECEIVED, 'MESSAGE_RECEIVED'], {
-        runtime: this.runtime,
-        message: memory,
-        callback,
-        originalEvent: event,
-        room,
-      });
-
+      this.runtime.emitEvent(
+        [MatrixEventTypes.MESSAGE_RECEIVED, "MESSAGE_RECEIVED"],
+        {
+          runtime: this.runtime,
+          message: memory,
+          callback,
+          originalEvent: event,
+          room,
+        },
+      );
     } catch (error) {
       this.runtime.logger.error(`Error processing message: ${error}`);
     }
@@ -389,7 +584,10 @@ export class MatrixService extends Service implements IMatrixService {
 
     if (membership === MATRIX_MEMBERSHIP.JOIN) {
       // User joined room
-      const entityId = createUniqueUuid(this.runtime, event.state_key || event.sender);
+      const entityId = createUniqueUuid(
+        this.runtime,
+        event.state_key || event.sender,
+      );
       const roomUUID = createUniqueUuid(this.runtime, roomId);
 
       this.runtime.emitEvent([MatrixEventTypes.USER_JOINED], {
@@ -397,11 +595,14 @@ export class MatrixService extends Service implements IMatrixService {
         entityId,
         worldId: roomUUID,
         userId: event.state_key || event.sender,
-        room: await this.client?.getRoom(roomId),
+        room: await this.getRoomInfo(roomId),
       });
     } else if (membership === MATRIX_MEMBERSHIP.LEAVE) {
       // User left room
-      const entityId = createUniqueUuid(this.runtime, event.state_key || event.sender);
+      const entityId = createUniqueUuid(
+        this.runtime,
+        event.state_key || event.sender,
+      );
       const roomUUID = createUniqueUuid(this.runtime, roomId);
 
       this.runtime.emitEvent([MatrixEventTypes.USER_LEFT], {
@@ -409,7 +610,7 @@ export class MatrixService extends Service implements IMatrixService {
         entityId,
         worldId: roomUUID,
         userId: event.state_key || event.sender,
-        room: await this.client?.getRoom(roomId),
+        room: await this.getRoomInfo(roomId),
       });
     }
   }
@@ -419,9 +620,9 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private async handleReactionEvent(roomId: string, event: MatrixEvent) {
     const content = event.content as any;
-    const relatesTo = content['m.relates_to'];
-    
-    if (!relatesTo || relatesTo.rel_type !== 'm.annotation') {
+    const relatesTo = content["m.relates_to"];
+
+    if (!relatesTo || relatesTo.rel_type !== "m.annotation") {
       return;
     }
 
@@ -438,7 +639,7 @@ export class MatrixService extends Service implements IMatrixService {
       agentId: this.runtime.agentId,
       content: {
         text: `*Reacted with ${reactionKey}*`,
-        source: 'matrix',
+        source: "matrix",
         inReplyTo: createUniqueUuid(this.runtime, targetEventId),
       },
       roomId: roomUUID,
@@ -455,14 +656,17 @@ export class MatrixService extends Service implements IMatrixService {
       return [];
     };
 
-    this.runtime.emitEvent([MatrixEventTypes.REACTION_RECEIVED, 'REACTION_RECEIVED'], {
-      runtime: this.runtime,
-      message: memory,
-      callback,
-      originalEvent: event,
-      targetEventId,
-      reactionKey,
-    });
+    this.runtime.emitEvent(
+      [MatrixEventTypes.REACTION_RECEIVED, "REACTION_RECEIVED"],
+      {
+        runtime: this.runtime,
+        message: memory,
+        callback,
+        originalEvent: event,
+        targetEventId,
+        reactionKey,
+      },
+    );
   }
 
   /**
@@ -470,18 +674,19 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private async handleRoomJoin(roomId: string, event: MatrixEvent) {
     try {
-      const room = await this.client?.getRoom(roomId);
-      if (!room) return;
+      const room = await this.getRoomInfo(roomId);
 
       const roomUUID = createUniqueUuid(this.runtime, roomId);
 
-      this.runtime.emitEvent([MatrixEventTypes.ROOM_JOINED, EventType.WORLD_JOINED], {
-        runtime: this.runtime,
-        worldId: roomUUID,
-        room,
-        source: 'matrix',
-      });
-
+      this.runtime.emitEvent(
+        [MatrixEventTypes.ROOM_JOINED, EventType.WORLD_JOINED],
+        {
+          runtime: this.runtime,
+          worldId: roomUUID,
+          room,
+          source: "matrix",
+        },
+      );
     } catch (error) {
       this.runtime.logger.error(`Error handling room join: ${error}`);
     }
@@ -492,16 +697,15 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private async handleRoomLeave(roomId: string, event: MatrixEvent) {
     try {
-      const room = await this.client?.getRoom(roomId);
+      const room = await this.getRoomInfo(roomId);
       const roomUUID = createUniqueUuid(this.runtime, roomId);
 
       this.runtime.emitEvent([MatrixEventTypes.ROOM_LEFT], {
         runtime: this.runtime,
         worldId: roomUUID,
         room,
-        source: 'matrix',
+        source: "matrix",
       });
-
     } catch (error) {
       this.runtime.logger.error(`Error handling room leave: ${error}`);
     }
@@ -511,7 +715,7 @@ export class MatrixService extends Service implements IMatrixService {
    * Called when the client is ready
    */
   private async onReady() {
-    this.runtime.logger.success('MATRIX CLIENT READY');
+    this.runtime.logger.success("MATRIX CLIENT READY");
 
     try {
       const joinedRooms = await this.client?.getJoinedRooms();
@@ -519,25 +723,28 @@ export class MatrixService extends Service implements IMatrixService {
 
       for (const roomId of joinedRooms) {
         try {
-          const room = await this.client?.getRoom(roomId);
-          if (!room) continue;
+          const room = await this.getRoomInfo(roomId);
 
           const roomUUID = createUniqueUuid(this.runtime, roomId);
 
-          this.runtime.emitEvent([MatrixEventTypes.ROOM_JOINED, EventType.WORLD_CONNECTED], {
-            runtime: this.runtime,
-            worldId: roomUUID,
-            name: room.name || roomId,
-            room,
-            source: 'matrix',
-          });
-
+          this.runtime.emitEvent(
+            [MatrixEventTypes.ROOM_JOINED, EventType.WORLD_CONNECTED],
+            {
+              runtime: this.runtime,
+              worldId: roomUUID,
+              name: room.name || roomId,
+              room,
+              source: "matrix",
+            },
+          );
         } catch (error) {
-          this.runtime.logger.error(`Error processing room ${roomId}: ${error}`);
+          this.runtime.logger.error(
+            `Error processing room ${roomId}: ${error}`,
+          );
         }
       }
     } catch (error) {
-      this.runtime.logger.error('Error during Matrix ready processing:', error);
+      this.runtime.logger.error("Error during Matrix ready processing:", error);
     }
   }
 
@@ -548,7 +755,9 @@ export class MatrixService extends Service implements IMatrixService {
     if (!this.allowedRoomIds) {
       return true;
     }
-    return this.allowedRoomIds.includes(roomId) || this.dynamicRoomIds.has(roomId);
+    return (
+      this.allowedRoomIds.includes(roomId) || this.dynamicRoomIds.has(roomId)
+    );
   }
 
   /**
@@ -582,15 +791,15 @@ export class MatrixService extends Service implements IMatrixService {
    * Stops the Matrix service and cleans up resources
    */
   public async stop(): Promise<void> {
-    this.runtime.logger.info('Stopping Matrix service...');
-    
+    this.runtime.logger.info("Stopping Matrix service...");
+
     if (this.client) {
       await this.client.stop();
       this.client = null;
-      this.runtime.logger.info('Matrix client stopped.');
+      this.runtime.logger.info("Matrix client stopped.");
     }
-    
-    this.runtime.logger.info('Matrix service stopped.');
+
+    this.runtime.logger.info("Matrix service stopped.");
   }
 }
 

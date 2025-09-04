@@ -1,28 +1,33 @@
-import type { Character, EntityPayload, MessagePayload, WorldPayload } from '@elizaos/core';
-import type { MatrixClient, MatrixEvent, Room } from 'matrix-bot-sdk';
+import type {
+  Character,
+  EntityPayload,
+  MessagePayload,
+  WorldPayload,
+} from "@elizaos/core";
+import type { MatrixClient, MatrixEvent } from "matrix-bot-sdk";
 
 /**
  * Matrix-specific event types
  */
 export enum MatrixEventTypes {
   // Message events
-  MESSAGE_RECEIVED = 'MATRIX_MESSAGE_RECEIVED',
-  MESSAGE_SENT = 'MATRIX_MESSAGE_SENT',
+  MESSAGE_RECEIVED = "MATRIX_MESSAGE_RECEIVED",
+  MESSAGE_SENT = "MATRIX_MESSAGE_SENT",
 
   // Reaction events
-  REACTION_RECEIVED = 'MATRIX_REACTION_RECEIVED',
-  REACTION_REMOVED = 'MATRIX_REACTION_REMOVED',
+  REACTION_RECEIVED = "MATRIX_REACTION_RECEIVED",
+  REACTION_REMOVED = "MATRIX_REACTION_REMOVED",
 
   // Room events
-  ROOM_JOINED = 'MATRIX_ROOM_JOINED',
-  ROOM_LEFT = 'MATRIX_ROOM_LEFT',
+  ROOM_JOINED = "MATRIX_ROOM_JOINED",
+  ROOM_LEFT = "MATRIX_ROOM_LEFT",
 
   // User events
-  USER_JOINED = 'MATRIX_USER_JOINED',
-  USER_LEFT = 'MATRIX_USER_LEFT',
+  USER_JOINED = "MATRIX_USER_JOINED",
+  USER_LEFT = "MATRIX_USER_LEFT",
 
   // State events
-  STATE_CHANGED = 'MATRIX_STATE_CHANGED',
+  STATE_CHANGED = "MATRIX_STATE_CHANGED",
 }
 
 /**
@@ -32,7 +37,7 @@ export interface MatrixMessageReceivedPayload extends MessagePayload {
   /** The original Matrix event */
   originalEvent: MatrixEvent;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -42,7 +47,7 @@ export interface MatrixMessageSentPayload extends MessagePayload {
   /** The event ID of the sent message */
   eventId: string;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -62,7 +67,7 @@ export interface MatrixReactionPayload extends MessagePayload {
  */
 export interface MatrixRoomPayload extends WorldPayload {
   /** The original Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -72,7 +77,7 @@ export interface MatrixUserJoinedPayload extends EntityPayload {
   /** The Matrix user ID */
   userId: string;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -82,7 +87,7 @@ export interface MatrixUserLeftPayload extends EntityPayload {
   /** The Matrix user ID */
   userId: string;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -107,10 +112,10 @@ export interface IMatrixService {
   character: Character;
 }
 
-export const MATRIX_SERVICE_NAME = 'matrix';
+export const MATRIX_SERVICE_NAME = "matrix";
 
 export const ServiceType = {
-  MATRIX: 'matrix',
+  MATRIX: "matrix",
 } as const;
 
 /**
@@ -122,6 +127,26 @@ export interface MatrixSettings {
   shouldIgnoreDirectMessages?: boolean;
   shouldRespondOnlyToMentions?: boolean;
   encryptionEnabled?: boolean;
+}
+
+/**
+ * Custom Room interface to replace missing matrix-bot-sdk Room
+ */
+export interface MatrixRoom {
+  /** Room ID */
+  id: string;
+  /** Room name */
+  name?: string;
+  /** Room topic */
+  topic?: string;
+  /** Whether the room is a direct message room */
+  isDirect: boolean;
+  /** Whether the room is encrypted */
+  isEncrypted: boolean;
+  /** Number of members in the room */
+  memberCount: number;
+  /** Room avatar URL */
+  avatarUrl?: string;
 }
 
 /**

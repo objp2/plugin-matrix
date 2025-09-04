@@ -1,48 +1,66 @@
-import { Action, type IAgentRuntime, type Memory, type State, logger } from '@elizaos/core';
-import { MatrixService } from '../service';
+import {
+  Action,
+  type IAgentRuntime,
+  type Memory,
+  type State,
+  logger,
+} from "@elizaos/core";
+import { MatrixService } from "../service";
 
 export const enableEncryption: Action = {
-  name: 'ENABLE_ENCRYPTION',
-  similes: ['MATRIX_ENCRYPT', 'START_ENCRYPTION', 'ENABLE_E2EE'],
-  description: 'Enable end-to-end encryption for a Matrix room',
-  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+  name: "ENABLE_ENCRYPTION",
+  similes: ["MATRIX_ENCRYPT", "START_ENCRYPTION", "ENABLE_E2EE"],
+  description: "Enable end-to-end encryption for a Matrix room",
+  validate: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+  ): Promise<boolean> => {
     const content = message.content;
-    return !!(content.roomId);
+    return !!content.roomId;
   },
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
-    state?: State
+    state?: State,
   ): Promise<boolean> => {
     try {
-      const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+      const service = runtime.getService(
+        MatrixService.serviceType,
+      ) as MatrixService;
       if (!service?.client) {
-        logger.error('Matrix service not available');
+        logger.error("Matrix service not available");
         return false;
       }
 
       const { roomId } = message.content;
-      
+
       if (!roomId) {
-        logger.error('Missing required content: roomId');
+        logger.error("Missing required content: roomId");
         return false;
       }
 
       // Check if room is already encrypted
       const roomState = await service.client.getRoomState(roomId as string);
-      const isAlreadyEncrypted = roomState.some(event => event.type === 'm.room.encryption');
-      
+      const isAlreadyEncrypted = roomState.some(
+        (event) => event.type === "m.room.encryption",
+      );
+
       if (isAlreadyEncrypted) {
         logger.info(`Room ${roomId} is already encrypted`);
         return true;
       }
 
       // Enable encryption for the room
-      await service.client.sendStateEvent(roomId as string, 'm.room.encryption', '', {
-        algorithm: 'm.megolm.v1.aes-sha2',
-        rotation_period_ms: 604800000, // 7 days
-        rotation_period_msgs: 100,
-      });
+      await service.client.sendStateEvent(
+        roomId as string,
+        "m.room.encryption",
+        "",
+        {
+          algorithm: "m.megolm.v1.aes-sha2",
+          rotation_period_ms: 604800000, // 7 days
+          rotation_period_msgs: 100,
+        },
+      );
 
       logger.success(`Encryption enabled for room ${roomId}`);
       return true;
@@ -54,15 +72,15 @@ export const enableEncryption: Action = {
   examples: [
     [
       {
-        user: '{{user1}}',
-        content: { text: 'Enable encryption for this room' },
+        user: "{{user1}}",
+        content: { text: "Enable encryption for this room" },
       },
       {
-        user: '{{user2}}',
+        user: "{{user2}}",
         content: {
-          text: 'I\'ll enable end-to-end encryption for this room.',
-          action: 'ENABLE_ENCRYPTION',
-          roomId: '!general:matrix.org',
+          text: "I'll enable end-to-end encryption for this room.",
+          action: "ENABLE_ENCRYPTION",
+          roomId: "!general:matrix.org",
         },
       },
     ],

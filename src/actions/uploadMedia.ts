@@ -1,33 +1,44 @@
-import { Action, type IAgentRuntime, type Memory, type State, logger } from '@elizaos/core';
-import { MatrixService } from '../service';
-import { MATRIX_MESSAGE_TYPES } from '../constants';
-import * as fs from 'fs';
-import * as path from 'path';
+import {
+  Action,
+  type IAgentRuntime,
+  type Memory,
+  type State,
+  logger,
+} from "@elizaos/core";
+import { MatrixService } from "../service";
+import { MATRIX_MESSAGE_TYPES } from "../constants";
+import * as fs from "fs";
+import * as path from "path";
 
 export const uploadMedia: Action = {
-  name: 'UPLOAD_MEDIA',
-  similes: ['MATRIX_UPLOAD', 'UPLOAD_FILE', 'SEND_FILE'],
-  description: 'Upload and send media files to a Matrix room',
-  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+  name: "UPLOAD_MEDIA",
+  similes: ["MATRIX_UPLOAD", "UPLOAD_FILE", "SEND_FILE"],
+  description: "Upload and send media files to a Matrix room",
+  validate: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+  ): Promise<boolean> => {
     const content = message.content;
     return !!(content.filePath && content.roomId);
   },
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
-    state?: State
+    state?: State,
   ): Promise<boolean> => {
     try {
-      const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+      const service = runtime.getService(
+        MatrixService.serviceType,
+      ) as MatrixService;
       if (!service?.client) {
-        logger.error('Matrix service not available');
+        logger.error("Matrix service not available");
         return false;
       }
 
       const { filePath, roomId, fileName, mimeType } = message.content;
-      
+
       if (!filePath || !roomId) {
-        logger.error('Missing required content: filePath and roomId');
+        logger.error("Missing required content: filePath and roomId");
         return false;
       }
 
@@ -40,46 +51,50 @@ export const uploadMedia: Action = {
       // Read file
       const fileBuffer = fs.readFileSync(absolutePath);
       const detectedFileName = fileName || path.basename(absolutePath);
-      
+
       // Detect MIME type if not provided
       let detectedMimeType = mimeType as string;
       if (!detectedMimeType) {
         const ext = path.extname(absolutePath).toLowerCase();
         switch (ext) {
-          case '.jpg':
-          case '.jpeg':
-            detectedMimeType = 'image/jpeg';
+          case ".jpg":
+          case ".jpeg":
+            detectedMimeType = "image/jpeg";
             break;
-          case '.png':
-            detectedMimeType = 'image/png';
+          case ".png":
+            detectedMimeType = "image/png";
             break;
-          case '.gif':
-            detectedMimeType = 'image/gif';
+          case ".gif":
+            detectedMimeType = "image/gif";
             break;
-          case '.mp4':
-            detectedMimeType = 'video/mp4';
+          case ".mp4":
+            detectedMimeType = "video/mp4";
             break;
-          case '.mp3':
-            detectedMimeType = 'audio/mpeg';
+          case ".mp3":
+            detectedMimeType = "audio/mpeg";
             break;
-          case '.pdf':
-            detectedMimeType = 'application/pdf';
+          case ".pdf":
+            detectedMimeType = "application/pdf";
             break;
           default:
-            detectedMimeType = 'application/octet-stream';
+            detectedMimeType = "application/octet-stream";
         }
       }
 
       // Upload file to Matrix
-      const mxcUrl = await service.client.uploadContent(fileBuffer, detectedMimeType, detectedFileName);
+      const mxcUrl = await service.client.uploadContent(
+        fileBuffer,
+        detectedMimeType,
+        detectedFileName,
+      );
 
       // Determine message type based on MIME type
       let msgtype = MATRIX_MESSAGE_TYPES.FILE;
-      if (detectedMimeType.startsWith('image/')) {
+      if (detectedMimeType.startsWith("image/")) {
         msgtype = MATRIX_MESSAGE_TYPES.IMAGE;
-      } else if (detectedMimeType.startsWith('audio/')) {
+      } else if (detectedMimeType.startsWith("audio/")) {
         msgtype = MATRIX_MESSAGE_TYPES.AUDIO;
-      } else if (detectedMimeType.startsWith('video/')) {
+      } else if (detectedMimeType.startsWith("video/")) {
         msgtype = MATRIX_MESSAGE_TYPES.VIDEO;
       }
 
@@ -113,16 +128,16 @@ export const uploadMedia: Action = {
   examples: [
     [
       {
-        user: '{{user1}}',
-        content: { text: 'Upload the image file to the room' },
+        user: "{{user1}}",
+        content: { text: "Upload the image file to the room" },
       },
       {
-        user: '{{user2}}',
+        user: "{{user2}}",
         content: {
-          text: 'I\'ll upload the image now.',
-          action: 'UPLOAD_MEDIA',
-          filePath: './image.jpg',
-          roomId: '!general:matrix.org',
+          text: "I'll upload the image now.",
+          action: "UPLOAD_MEDIA",
+          filePath: "./image.jpg",
+          roomId: "!general:matrix.org",
         },
       },
     ],

@@ -1,31 +1,42 @@
-import { Action, type IAgentRuntime, type Memory, type State, logger } from '@elizaos/core';
-import { MatrixService } from '../service';
-import { MATRIX_MESSAGE_TYPES } from '../constants';
+import {
+  Action,
+  type IAgentRuntime,
+  type Memory,
+  type State,
+  logger,
+} from "@elizaos/core";
+import { MatrixService } from "../service";
+import { MATRIX_MESSAGE_TYPES } from "../constants";
 
 export const sendMessage: Action = {
-  name: 'SEND_MESSAGE',
-  similes: ['SEND_MATRIX_MESSAGE', 'MATRIX_SEND', 'MESSAGE_SEND'],
-  description: 'Send a message to a Matrix room',
-  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+  name: "SEND_MESSAGE",
+  similes: ["SEND_MATRIX_MESSAGE", "MATRIX_SEND", "MESSAGE_SEND"],
+  description: "Send a message to a Matrix room",
+  validate: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+  ): Promise<boolean> => {
     const content = message.content;
     return !!(content.text && content.roomId);
   },
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
-    state?: State
+    state?: State,
   ): Promise<boolean> => {
     try {
-      const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+      const service = runtime.getService(
+        MatrixService.serviceType,
+      ) as MatrixService;
       if (!service?.client) {
-        logger.error('Matrix service not available');
+        logger.error("Matrix service not available");
         return false;
       }
 
       const { text, roomId } = message.content;
-      
+
       if (!text || !roomId) {
-        logger.error('Missing required content: text and roomId');
+        logger.error("Missing required content: text and roomId");
         return false;
       }
 
@@ -44,15 +55,15 @@ export const sendMessage: Action = {
   examples: [
     [
       {
-        user: '{{user1}}',
-        content: { text: 'Send a hello message to the general room' },
+        user: "{{user1}}",
+        content: { text: "Send a hello message to the general room" },
       },
       {
-        user: '{{user2}}',
+        user: "{{user2}}",
         content: {
-          text: 'I\'ll send the message now.',
-          action: 'SEND_MESSAGE',
-          roomId: '!general:matrix.org',
+          text: "I'll send the message now.",
+          action: "SEND_MESSAGE",
+          roomId: "!general:matrix.org",
         },
       },
     ],
