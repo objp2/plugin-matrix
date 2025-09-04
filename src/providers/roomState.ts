@@ -17,39 +17,24 @@ export const roomStateProvider: Provider = {
       }
 
       // Get room information
-      const room = await service.client.getRoom(roomId);
-      if (!room) {
-        return `Room ${roomId} not found`;
-      }
-
+      const roomInfo = await service.getRoomInfo(roomId);
+      
       // Get room members
       const members = await service.client.getRoomMembers(roomId);
       const memberCount = members.length;
       
       // Get room state
       const roomState = await service.client.getRoomState(roomId);
-      
-      // Find room name and topic from state
-      let roomName = room.name || roomId;
-      let roomTopic = '';
-      
-      for (const event of roomState) {
-        if (event.type === 'm.room.name' && event.content.name) {
-          roomName = event.content.name;
-        } else if (event.type === 'm.room.topic' && event.content.topic) {
-          roomTopic = event.content.topic;
-        }
-      }
 
       // Check if room is encrypted
       const isEncrypted = roomState.some(event => event.type === 'm.room.encryption');
 
       const stateInfo = [
-        `Room: ${roomName}`,
+        `Room: ${roomInfo.name || roomId}`,
         `ID: ${roomId}`,
-        roomTopic ? `Topic: ${roomTopic}` : '',
+        roomInfo.topic ? `Topic: ${roomInfo.topic}` : '',
         `Members: ${memberCount}`,
-        `Type: ${room.isDirect ? 'Direct Message' : 'Group Room'}`,
+        `Type: ${roomInfo.isDirect ? 'Direct Message' : 'Group Room'}`,
         `Encrypted: ${isEncrypted ? 'Yes' : 'No'}`,
         `Allowed by bot: ${service.isRoomAllowed(roomId) ? 'Yes' : 'No'}`,
       ].filter(Boolean).join('\n');

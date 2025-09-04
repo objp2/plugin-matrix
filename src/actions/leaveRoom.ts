@@ -31,8 +31,8 @@ export const leaveRoom: Action = {
       // Get room info before leaving for logging
       let roomName = roomId;
       try {
-        const room = await service.client.getRoom(roomId as string);
-        roomName = room?.name || roomId as string;
+        const roomInfo = await service.getRoomInfo(roomId as string);
+        roomName = roomInfo.name || roomId as string;
       } catch (error) {
         // Room info not critical for leaving
       }

@@ -32,38 +32,26 @@ export const listRooms: Action = {
       
       for (const roomId of joinedRooms) {
         try {
-          const room = await service.client.getRoom(roomId);
+          const roomInfo = await service.getRoomInfo(roomId);
           const roomState = await service.client.getRoomState(roomId);
           
-          // Find room name and topic
-          let roomName = room?.name || roomId;
-          let roomTopic = '';
-          
-          for (const event of roomState) {
-            if (event.type === 'm.room.name' && event.content.name) {
-              roomName = event.content.name;
-            } else if (event.type === 'm.room.topic' && event.content.topic) {
-              roomTopic = event.content.topic;
-            }
-          }
-
           // Check if encrypted
           const isEncrypted = roomState.some(event => event.type === 'm.room.encryption');
           
           // Get member count
           const members = await service.client.getRoomMembers(roomId);
           
-          const roomInfo = [
-            `📍 ${roomName}`,
+          const roomDetails = [
+            `📍 ${roomInfo.name || roomId}`,
             `   ID: ${roomId}`,
-            roomTopic ? `   Topic: ${roomTopic}` : '',
+            roomInfo.topic ? `   Topic: ${roomInfo.topic}` : '',
             `   Members: ${members.length}`,
-            `   Type: ${room?.isDirect ? 'DM' : 'Group'}`,
+            `   Type: ${roomInfo.isDirect ? 'DM' : 'Group'}`,
             `   Encrypted: ${isEncrypted ? '🔒 Yes' : '🔓 No'}`,
             `   Allowed: ${service.isRoomAllowed(roomId) ? '✅ Yes' : '❌ No'}`,
           ].filter(Boolean).join('\n');
           
-          roomInfoList.push(roomInfo);
+          roomInfoList.push(roomDetails);
         } catch (error) {
           logger.warn(`Error getting info for room ${roomId}: ${error}`);
           roomInfoList.push(`📍 ${roomId} (Error loading details)`);

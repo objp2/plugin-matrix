@@ -1,5 +1,5 @@
 import type { Character, EntityPayload, MessagePayload, WorldPayload } from '@elizaos/core';
-import type { MatrixClient, MatrixEvent, Room } from 'matrix-bot-sdk';
+import type { MatrixClient, MatrixEvent } from 'matrix-bot-sdk';
 
 /**
  * Matrix-specific event types
@@ -32,7 +32,7 @@ export interface MatrixMessageReceivedPayload extends MessagePayload {
   /** The original Matrix event */
   originalEvent: MatrixEvent;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface MatrixMessageSentPayload extends MessagePayload {
   /** The event ID of the sent message */
   eventId: string;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -62,7 +62,7 @@ export interface MatrixReactionPayload extends MessagePayload {
  */
 export interface MatrixRoomPayload extends WorldPayload {
   /** The original Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -72,7 +72,7 @@ export interface MatrixUserJoinedPayload extends EntityPayload {
   /** The Matrix user ID */
   userId: string;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -82,7 +82,7 @@ export interface MatrixUserLeftPayload extends EntityPayload {
   /** The Matrix user ID */
   userId: string;
   /** The Matrix room */
-  room: Room;
+  room: MatrixRoom;
 }
 
 /**
@@ -122,6 +122,26 @@ export interface MatrixSettings {
   shouldIgnoreDirectMessages?: boolean;
   shouldRespondOnlyToMentions?: boolean;
   encryptionEnabled?: boolean;
+}
+
+/**
+ * Custom Room interface to replace missing matrix-bot-sdk Room
+ */
+export interface MatrixRoom {
+  /** Room ID */
+  id: string;
+  /** Room name */
+  name?: string;
+  /** Room topic */
+  topic?: string;
+  /** Whether the room is a direct message room */
+  isDirect: boolean;
+  /** Whether the room is encrypted */
+  isEncrypted: boolean;
+  /** Number of members in the room */
+  memberCount: number;
+  /** Room avatar URL */
+  avatarUrl?: string;
 }
 
 /**
