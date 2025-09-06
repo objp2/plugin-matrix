@@ -459,6 +459,9 @@ export class MatrixService extends Service implements IMatrixService {
           await this.handleMemberEvent(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.REACTION) {
           await this.handleReactionEvent(roomId, event);
+        } else if (event.type === MATRIX_EVENT_TYPES.MESSAGE) {
+          // Handle regular messages that come through room.event instead of room.message
+          await this.handleRoomMessage(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.ENCRYPTED) {
           await this.handleEncryptedMessage(roomId, event);
         }
@@ -669,7 +672,32 @@ export class MatrixService extends Service implements IMatrixService {
         `Received encrypted message from ${event.sender} in room ${roomId}`,
       );
 
-      // For encrypted messages that couldn't be decrypted, we still forward a notification
+      // Try to decrypt the message using Matrix SDK
+      let decryptedContent: any = null;
+      let messageText = "[Encrypted message - content not available]";
+      let isDecrypted = false;
+
+      try {
+        // Check if the event has already been decrypted by the SDK
+        if (event.content && event.content.msgtype && event.content.body) {
+          // Message has been decrypted successfully
+          decryptedContent = event.content;
+          messageText = decryptedContent.body;
+          isDecrypted = true;
+          this.runtime.logger.debug(
+            `Successfully decrypted message from ${event.sender} in room ${roomId}`,
+          );
+        } else {
+          // Try to get the decrypted content if available
+          this.runtime.logger.debug(
+            `Message from ${event.sender} in room ${roomId} could not be decrypted`,
+          );
+        }
+      } catch (decryptError) {
+        this.runtime.logger.warn(
+          `Failed to decrypt message from ${event.sender} in room ${roomId}: ${decryptError}`,
+        );
+      }
       const room = await this.getRoomInfo(roomId);
       const roomUUID = createUniqueUuid(this.runtime, roomId);
       const entityId = createUniqueUuid(this.runtime, event.sender);
@@ -696,39 +724,94 @@ export class MatrixService extends Service implements IMatrixService {
         type: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
       });
 
+      // Format message text based on type if decrypted
+      let isMediaMessage = false;
+      if (isDecrypted && decryptedContent) {
+        if (decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.EMOTE) {
+          messageText = `*${event.sender} ${decryptedContent.body}*`;
+        } else if (decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.NOTICE) {
+          messageText = `[Notice] ${decryptedContent.body}`;
+        } else if (
+          [
+            MATRIX_MESSAGE_TYPES.IMAGE,
+            MATRIX_MESSAGE_TYPES.FILE,
+            MATRIX_MESSAGE_TYPES.AUDIO,
+            MATRIX_MESSAGE_TYPES.VIDEO,
+          ].includes(decryptedContent.msgtype)
+        ) {
+          isMediaMessage = true;
+          const mediaType = decryptedContent.msgtype.replace("m.", "");
+          messageText = `[${mediaType.toUpperCase()}] ${decryptedContent.body || `Shared a ${mediaType}`}`;
+
+          // Add media URL info if available
+          if (decryptedContent.url) {
+            messageText += ` (${decryptedContent.url})`;
+          }
+        }
+      }
+
       const memory: Memory = {
         id: messageUUID,
         entityId,
         agentId: this.runtime.agentId,
         content: {
-          text: "[Encrypted message - content not available]",
+          text: messageText,
           source: "matrix",
           channelType: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
           metadata: {
-            messageType: "m.room.encrypted",
+            messageType: isDecrypted
+              ? decryptedContent?.msgtype || "m.text"
+              : "m.room.encrypted",
             originalEvent: event.event_id,
             roomId: roomId,
             isEncrypted: true,
+            isDecrypted: isDecrypted,
+            isMedia: isMediaMessage,
+            mediaUrl: isDecrypted ? decryptedContent?.url : undefined,
+            mimeType: isDecrypted
+              ? decryptedContent?.info?.mimetype
+              : undefined,
+            fileSize: isDecrypted ? decryptedContent?.info?.size : undefined,
           },
         },
         roomId: roomUUID,
         createdAt: event.origin_server_ts || Date.now(),
       };
 
-      // Don't provide callback for encrypted messages we can't decrypt
+      // Provide callback for responses - encrypted messages should be able to reply too
+      const callback: HandlerCallback = async (content): Promise<Memory[]> => {
+        try {
+          if (content.text) {
+            // Split long messages
+            const chunks = this.splitMessage(content.text, 4096);
+            for (const chunk of chunks) {
+              await this.client?.sendMessage(roomId, {
+                msgtype: MATRIX_MESSAGE_TYPES.TEXT,
+                body: chunk,
+              });
+            }
+          }
+        } catch (error) {
+          this.runtime.logger.error(
+            `Error sending response to encrypted message: ${error}`,
+          );
+        }
+        return [];
+      };
+
       this.runtime.emitEvent(
         [MatrixEventTypes.MESSAGE_RECEIVED, "MESSAGE_RECEIVED"],
         {
           runtime: this.runtime,
           message: memory,
-          callback: async () => [],
+          callback,
           originalEvent: event,
           room,
         },
       );
 
       this.runtime.logger.debug(
-        `Forwarded encrypted message notification from ${event.sender} in room ${roomId} to ElizaOS`,
+        `Forwarded ${isDecrypted ? "decrypted" : "encrypted"} message from ${event.sender} in room ${roomId} to ElizaOS`,
       );
     } catch (error) {
       this.runtime.logger.error(
