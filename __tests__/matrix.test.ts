@@ -172,19 +172,44 @@ describe('Actions', () => {
   });
 
   describe('Send Message Action', () => {
-    it('should validate message content', async () => {
+    it('should validate message content and service availability', async () => {
       const sendMessage = matrixPlugin.actions.find(a => a.name === 'SEND_MESSAGE')!;
       
       const validMessage = {
         content: { text: 'Hello', roomId: '!room:matrix.org' },
       } as any;
       
-      const invalidMessage = {
+      const messageWithoutText = {
         content: { roomId: '!room:matrix.org' },
       } as any;
 
+      const messageWithoutRoom = {
+        content: { text: 'Hello' },
+      } as any;
+
+      const emptyContentMessage = {
+        content: {},
+      } as any;
+
       expect(await sendMessage.validate(mockRuntime, validMessage)).toBe(true);
-      expect(await sendMessage.validate(mockRuntime, invalidMessage)).toBe(false);
+      expect(await sendMessage.validate(mockRuntime, messageWithoutText)).toBe(false);
+      expect(await sendMessage.validate(mockRuntime, messageWithoutRoom)).toBe(false);
+      // Empty content should return true to indicate action is available when service is ready
+      expect(await sendMessage.validate(mockRuntime, emptyContentMessage)).toBe(true);
+    });
+
+    it('should return false when Matrix service is not available', async () => {
+      const sendMessage = matrixPlugin.actions.find(a => a.name === 'SEND_MESSAGE')!;
+      
+      const runtimeWithoutService = {
+        getService: vi.fn().mockReturnValue(null),
+      };
+
+      const emptyContentMessage = {
+        content: {},
+      } as any;
+
+      expect(await sendMessage.validate(runtimeWithoutService as any, emptyContentMessage)).toBe(false);
     });
   });
 
@@ -210,7 +235,7 @@ describe('Actions', () => {
   });
 
   describe('Join Room Action', () => {
-    it('should validate room identifier', async () => {
+    it('should validate room identifier and action availability', async () => {
       const joinAction = matrixPlugin.actions.find(a => a.name === 'JOIN_ROOM')!;
       
       const validMessage = {
@@ -221,13 +246,19 @@ describe('Actions', () => {
         content: { roomAlias: '#general:matrix.org' },
       } as any;
       
-      const invalidMessage = {
+      const emptyContentMessage = {
         content: {},
+      } as any;
+
+      const noContentMessage = {
+        content: undefined,
       } as any;
 
       expect(await joinAction.validate(mockRuntime, validMessage)).toBe(true);
       expect(await joinAction.validate(mockRuntime, validAliasMessage)).toBe(true);
-      expect(await joinAction.validate(mockRuntime, invalidMessage)).toBe(false);
+      // Empty content should return true to indicate action is available when service is ready
+      expect(await joinAction.validate(mockRuntime, emptyContentMessage)).toBe(true);
+      expect(await joinAction.validate(mockRuntime, noContentMessage)).toBe(true);
     });
   });
 

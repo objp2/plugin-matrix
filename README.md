@@ -256,6 +256,8 @@ MATRIX_ACCESS_TOKEN=syt_yourtoken_here
 MATRIX_USER_ID=@mybot:matrix.org
 ```
 
+**Important**: All three configuration parameters above are **required** for Matrix actions to be available to the agent. If any of these are missing or empty, only the LIST_ROOMS action will be functional, and other actions (JOIN_ROOM, SEND_MESSAGE, UPLOAD_MEDIA, etc.) will not be available.
+
 ### Private Server
 ```bash
 MATRIX_HOMESERVER_URL=https://matrix.private.com
@@ -316,6 +318,13 @@ npm run test:coverage
 ## Troubleshooting
 
 ### Common Issues
+
+**Actions Not Available to Agent**
+If only LIST_ROOMS is available and other Matrix actions (JOIN_ROOM, SEND_MESSAGE, UPLOAD_MEDIA, etc.) are not working:
+- Verify all required environment variables are set: `MATRIX_HOMESERVER_URL`, `MATRIX_ACCESS_TOKEN`, and `MATRIX_USER_ID`
+- Ensure the access token is valid and not expired
+- Check that the Matrix service is properly initialized in the logs
+- Confirm the homeserver URL is accessible from your environment
 
 **Authentication Failures**
 - Verify your access token is valid and not expired
