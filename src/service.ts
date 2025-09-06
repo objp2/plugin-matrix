@@ -530,6 +530,7 @@ export class MatrixService extends Service implements IMatrixService {
     this.client.on(
       "room.message",
       async (roomId: string, event: MatrixEvent) => {
+        this.runtime.logger.info(`🔍 [DEBUG] room.message event received - roomId: ${roomId}, eventType: ${event.type}, sender: ${event.sender}`);
         try {
           await this.handleRoomMessage(roomId, event);
         } catch (error) {
@@ -540,6 +541,7 @@ export class MatrixService extends Service implements IMatrixService {
 
     // Handle room member events
     this.client.on("room.event", async (roomId: string, event: MatrixEvent) => {
+      this.runtime.logger.info(`🔍 [DEBUG] room.event received - roomId: ${roomId}, eventType: ${event.type}, sender: ${event.sender}`);
       try {
         if (event.type === MATRIX_EVENT_TYPES.MEMBER) {
           await this.handleMemberEvent(roomId, event);
@@ -547,9 +549,13 @@ export class MatrixService extends Service implements IMatrixService {
           await this.handleReactionEvent(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.MESSAGE) {
           // Handle regular messages that come through room.event instead of room.message
+          this.runtime.logger.info(`🔍 [DEBUG] Message event received via room.event, forwarding to handleRoomMessage`);
           await this.handleRoomMessage(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.ENCRYPTED) {
+          this.runtime.logger.info(`🔍 [DEBUG] Encrypted message event received, forwarding to handleEncryptedMessage`);
           await this.handleEncryptedMessage(roomId, event);
+        } else {
+          this.runtime.logger.debug(`🔍 [DEBUG] Unhandled room.event type: ${event.type}`);
         }
       } catch (error) {
         this.runtime.logger.error(`Error handling room event: ${error}`);
@@ -754,13 +760,17 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private async handleRoomMessage(roomId: string, event: MatrixEvent) {
     try {
+      this.runtime.logger.info(`🔍 [DEBUG] handleRoomMessage called - sender: ${event.sender}, roomId: ${roomId}, eventType: ${event.type}, eventId: ${event.event_id}`);
+      
       // Skip if we're sending the message
       if (event.sender === (await this.client?.getUserId())) {
+        this.runtime.logger.info(`🔍 [DEBUG] Skipping message from self: ${event.sender}`);
         return;
       }
 
       // Skip if room restrictions are set and this room is not allowed
       if (this.allowedRoomIds && !this.isRoomAllowed(roomId)) {
+        this.runtime.logger.info(`🔍 [DEBUG] Skipping message from non-allowed room: ${roomId}`);
         return;
       }
 
@@ -769,13 +779,17 @@ export class MatrixService extends Service implements IMatrixService {
         this.matrixSettings.shouldIgnoreBotMessages &&
         event.sender.includes("bot")
       ) {
+        this.runtime.logger.info(`🔍 [DEBUG] Skipping bot message from: ${event.sender}`);
         return;
       }
 
       const messageContent = event.content as MessageEventContent;
       if (!messageContent) {
+        this.runtime.logger.info(`🔍 [DEBUG] No message content found in event`);
         return;
       }
+
+      this.runtime.logger.info(`🔍 [DEBUG] Message content - msgtype: ${messageContent.msgtype}, body: ${messageContent.body?.substring(0, 100)}..., url: ${messageContent.url || 'none'}`);
 
       // Handle supported message types
       const supportedTypes = [
@@ -791,11 +805,17 @@ export class MatrixService extends Service implements IMatrixService {
       if (!supportedTypes.includes(messageContent.msgtype)) {
         if (messageContent.msgtype) {
           this.runtime.logger.debug(
-            `Received unsupported message type ${messageContent.msgtype} in room ${roomId}`,
+            `🔍 [DEBUG] Received unsupported message type ${messageContent.msgtype} in room ${roomId}`,
+          );
+        } else {
+          this.runtime.logger.debug(
+            `🔍 [DEBUG] Received message with no msgtype in room ${roomId}`,
           );
         }
         return;
       }
+
+      this.runtime.logger.info(`🔍 [DEBUG] Message type ${messageContent.msgtype} is supported, proceeding with processing`);
 
       const room = await this.getRoomInfo(roomId);
       const roomUUID = createUniqueUuid(this.runtime, roomId);
