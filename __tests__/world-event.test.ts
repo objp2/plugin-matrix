@@ -53,7 +53,7 @@ describe('Matrix World Event Fix', () => {
     };
   });
 
-  it('should emit WORLD_CONNECTED event with proper world object', async () => {
+  it('should emit WORLD_JOINED event with proper world object on ready', async () => {
     // Create a MatrixService instance
     const service = new MatrixService(mockRuntime);
     
@@ -66,15 +66,15 @@ describe('Matrix World Event Fix', () => {
     
     // Get the event emission call
     const emitEventCalls = mockEmitEvent.mock.calls;
-    const worldConnectedCall = emitEventCalls.find(call => 
-      call[0].includes(EventType.WORLD_CONNECTED)
+    const worldJoinedCall = emitEventCalls.find(call => 
+      call[0].includes(EventType.WORLD_JOINED)
     );
     
-    expect(worldConnectedCall).toBeDefined();
+    expect(worldJoinedCall).toBeDefined();
     
     // Verify the event payload structure
-    const [eventTypes, payload] = worldConnectedCall;
-    expect(eventTypes).toContain(EventType.WORLD_CONNECTED);
+    const [eventTypes, payload] = worldJoinedCall;
+    expect(eventTypes).toContain(EventType.WORLD_JOINED);
     
     // Verify that the payload contains a proper world object
     expect(payload).toHaveProperty('world');
