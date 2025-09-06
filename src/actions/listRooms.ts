@@ -17,11 +17,13 @@ export const listRooms: Action = {
     message: Memory,
   ): Promise<boolean> => {
     // Check if Matrix service is available
-    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    const service = runtime.getService(
+      MatrixService.serviceType,
+    ) as MatrixService;
     if (!service?.client) {
       return false;
     }
-    
+
     return true; // No specific content validation needed for listing rooms
   },
   handler: async (

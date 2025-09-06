@@ -374,49 +374,57 @@ export class MatrixService extends Service implements IMatrixService {
             if (attachment.contentType === "IMAGE" && attachment.url) {
               // Handle image attachments
               let imageBuffer: Buffer;
-              
-              if (attachment.url.startsWith('data:')) {
+
+              if (attachment.url.startsWith("data:")) {
                 // Handle base64 data URL
-                const base64Data = attachment.url.split('base64,')[1];
-                imageBuffer = Buffer.from(base64Data, 'base64');
+                const base64Data = attachment.url.split("base64,")[1];
+                imageBuffer = Buffer.from(base64Data, "base64");
               } else {
                 // Handle HTTP/HTTPS URL - download the image
-                const https = await import('https');
-                const http = await import('http');
-                
+                const https = await import("https");
+                const http = await import("http");
+
                 imageBuffer = await new Promise<Buffer>((resolve, reject) => {
-                  const client = attachment.url.startsWith("https:") ? https : http;
-                  
-                  client.get(attachment.url, (response) => {
-                    if (response.statusCode !== 200) {
-                      reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
-                      return;
-                    }
-                    
-                    const chunks: Buffer[] = [];
-                    response.on("data", (chunk) => chunks.push(chunk));
-                    response.on("end", () => resolve(Buffer.concat(chunks)));
-                    response.on("error", reject);
-                  }).on("error", reject);
+                  const client = attachment.url.startsWith("https:")
+                    ? https
+                    : http;
+
+                  client
+                    .get(attachment.url, (response) => {
+                      if (response.statusCode !== 200) {
+                        reject(
+                          new Error(
+                            `HTTP ${response.statusCode}: ${response.statusMessage}`,
+                          ),
+                        );
+                        return;
+                      }
+
+                      const chunks: Buffer[] = [];
+                      response.on("data", (chunk) => chunks.push(chunk));
+                      response.on("end", () => resolve(Buffer.concat(chunks)));
+                      response.on("error", reject);
+                    })
+                    .on("error", reject);
                 });
               }
-              
+
               // Detect MIME type
               let mimeType = "image/jpeg";
-              if (attachment.url.includes('data:')) {
+              if (attachment.url.includes("data:")) {
                 const mimeMatch = attachment.url.match(/data:([^;]+)/);
                 if (mimeMatch) {
                   mimeType = mimeMatch[1];
                 }
               }
-              
+
               // Upload to Matrix
               const mxcUrl = await this.client.uploadContent(
                 imageBuffer,
                 mimeType,
                 attachment.title || "image",
               );
-              
+
               // Send image message
               await this.client.sendMessage(targetRoomId, {
                 msgtype: MATRIX_MESSAGE_TYPES.IMAGE,
@@ -427,19 +435,24 @@ export class MatrixService extends Service implements IMatrixService {
                   size: imageBuffer.length,
                 },
               });
-              
-              runtime.logger.success(`[Matrix SendHandler] Sent image attachment: ${attachment.title}`);
+
+              runtime.logger.success(
+                `[Matrix SendHandler] Sent image attachment: ${attachment.title}`,
+              );
             }
             // Handle other attachment types (files, audio, video) if needed
           } catch (attachmentError) {
             runtime.logger.error(
-              `[Matrix SendHandler] Failed to send attachment: ${attachmentError}`
+              `[Matrix SendHandler] Failed to send attachment: ${attachmentError}`,
             );
           }
         }
       }
 
-      if (!content.text && (!content.attachments || content.attachments.length === 0)) {
+      if (
+        !content.text &&
+        (!content.attachments || content.attachments.length === 0)
+      ) {
         runtime.logger.warn(
           "[Matrix SendHandler] No content provided to send.",
         );
@@ -588,7 +601,9 @@ export class MatrixService extends Service implements IMatrixService {
     fileName: string,
   ): Promise<Media | null> {
     if (!this.client) {
-      this.runtime.logger.error("Matrix client not available for media download");
+      this.runtime.logger.error(
+        "Matrix client not available for media download",
+      );
       return null;
     }
 
@@ -602,25 +617,31 @@ export class MatrixService extends Service implements IMatrixService {
         return null;
       }
 
-      this.runtime.logger.debug(`Converted MXC URL ${mxcUrl} to HTTP URL: ${httpUrl}`);
+      this.runtime.logger.debug(
+        `Converted MXC URL ${mxcUrl} to HTTP URL: ${httpUrl}`,
+      );
 
       // Download the content as Buffer with improved error handling
       const contentBuffer = await this.downloadBuffer(httpUrl);
-      
+
       if (!contentBuffer || contentBuffer.length === 0) {
         this.runtime.logger.error(`Downloaded empty content from ${httpUrl}`);
         return null;
       }
 
-      this.runtime.logger.debug(`Successfully downloaded ${contentBuffer.length} bytes from ${httpUrl}`);
+      this.runtime.logger.debug(
+        `Successfully downloaded ${contentBuffer.length} bytes from ${httpUrl}`,
+      );
 
       // Convert Buffer to base64 data URL for VLM consumption
       const base64Data = contentBuffer.toString("base64");
       if (!base64Data) {
-        this.runtime.logger.error(`Failed to convert downloaded content to base64 for ${mxcUrl}`);
+        this.runtime.logger.error(
+          `Failed to convert downloaded content to base64 for ${mxcUrl}`,
+        );
         return null;
       }
-      
+
       const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
       // Determine content type from MIME type
@@ -636,7 +657,7 @@ export class MatrixService extends Service implements IMatrixService {
       }
 
       const mediaId = createUniqueUuid(this.runtime, `${mxcUrl}-${fileName}`);
-      
+
       const media: Media = {
         id: mediaId,
         url: dataUrl, // Use data URL for direct VLM access
@@ -647,7 +668,9 @@ export class MatrixService extends Service implements IMatrixService {
         contentType,
       };
 
-      this.runtime.logger.success(`Successfully created media object for ${fileName} (${contentType})`);
+      this.runtime.logger.success(
+        `Successfully created media object for ${fileName} (${contentType})`,
+      );
       return media;
     } catch (error) {
       this.runtime.logger.error(
@@ -665,7 +688,7 @@ export class MatrixService extends Service implements IMatrixService {
   private async downloadBuffer(url: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const client = url.startsWith("https:") ? https : http;
-      
+
       // Set a timeout for the request (30 seconds)
       const timeout = setTimeout(() => {
         reject(new Error(`Download timeout after 30 seconds for URL: ${url}`));
@@ -674,9 +697,9 @@ export class MatrixService extends Service implements IMatrixService {
       const request = client
         .get(url, (response) => {
           clearTimeout(timeout);
-          
+
           if (response.statusCode !== 200) {
-            const errorMsg = `HTTP ${response.statusCode}: ${response.statusMessage || 'Unknown error'} for URL: ${url}`;
+            const errorMsg = `HTTP ${response.statusCode}: ${response.statusMessage || "Unknown error"} for URL: ${url}`;
             this.runtime.logger.error(errorMsg);
             reject(new Error(errorMsg));
             return;
@@ -690,7 +713,11 @@ export class MatrixService extends Service implements IMatrixService {
             totalSize += chunk.length;
             if (totalSize > maxSize) {
               clearTimeout(timeout);
-              reject(new Error(`File too large: ${totalSize} bytes exceeds 50MB limit`));
+              reject(
+                new Error(
+                  `File too large: ${totalSize} bytes exceeds 50MB limit`,
+                ),
+              );
               return;
             }
             chunks.push(chunk);
@@ -699,19 +726,25 @@ export class MatrixService extends Service implements IMatrixService {
           response.on("end", () => {
             clearTimeout(timeout);
             const buffer = Buffer.concat(chunks);
-            this.runtime.logger.debug(`Downloaded ${buffer.length} bytes from ${url}`);
+            this.runtime.logger.debug(
+              `Downloaded ${buffer.length} bytes from ${url}`,
+            );
             resolve(buffer);
           });
 
           response.on("error", (error) => {
             clearTimeout(timeout);
-            this.runtime.logger.error(`Response error for ${url}: ${error.message}`);
+            this.runtime.logger.error(
+              `Response error for ${url}: ${error.message}`,
+            );
             reject(error);
           });
         })
         .on("error", (error) => {
           clearTimeout(timeout);
-          this.runtime.logger.error(`Request error for ${url}: ${error.message}`);
+          this.runtime.logger.error(
+            `Request error for ${url}: ${error.message}`,
+          );
           reject(error);
         });
 
@@ -820,9 +853,12 @@ export class MatrixService extends Service implements IMatrixService {
       ) {
         isMediaMessage = true;
         const mediaType = messageContent.msgtype.replace("m.", "");
-        
+
         // For images, attempt to download content for VLM processing
-        if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && messageContent.url) {
+        if (
+          messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE &&
+          messageContent.url
+        ) {
           this.runtime.logger.debug(
             `Processing image message for VLM: ${messageContent.url}`,
           );
@@ -830,9 +866,14 @@ export class MatrixService extends Service implements IMatrixService {
           // Always indicate that an image is present in the message text
           const fileName = messageContent.body || "image";
           const imageInfo = messageContent.info;
-          const sizeInfo = imageInfo?.size ? ` (${Math.round(imageInfo.size / 1024)}KB)` : "";
-          const dimensionInfo = imageInfo?.w && imageInfo?.h ? ` ${imageInfo.w}x${imageInfo.h}` : "";
-          
+          const sizeInfo = imageInfo?.size
+            ? ` (${Math.round(imageInfo.size / 1024)}KB)`
+            : "";
+          const dimensionInfo =
+            imageInfo?.w && imageInfo?.h
+              ? ` ${imageInfo.w}x${imageInfo.h}`
+              : "";
+
           messageText = `📷 **IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${messageContent.body || "User shared an image"}`;
 
           // Attempt to download the image content
@@ -1052,9 +1093,12 @@ export class MatrixService extends Service implements IMatrixService {
         ) {
           isMediaMessage = true;
           const mediaType = decryptedContent.msgtype.replace("m.", "");
-          
+
           // For encrypted images, attempt to download content for VLM processing
-          if (decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && decryptedContent.url) {
+          if (
+            decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE &&
+            decryptedContent.url
+          ) {
             this.runtime.logger.debug(
               `Processing encrypted image message for VLM: ${decryptedContent.url}`,
             );
@@ -1062,9 +1106,14 @@ export class MatrixService extends Service implements IMatrixService {
             // Always indicate that an encrypted image is present in the message text
             const fileName = decryptedContent.body || "encrypted_image";
             const imageInfo = decryptedContent.info;
-            const sizeInfo = imageInfo?.size ? ` (${Math.round(imageInfo.size / 1024)}KB)` : "";
-            const dimensionInfo = imageInfo?.w && imageInfo?.h ? ` ${imageInfo.w}x${imageInfo.h}` : "";
-            
+            const sizeInfo = imageInfo?.size
+              ? ` (${Math.round(imageInfo.size / 1024)}KB)`
+              : "";
+            const dimensionInfo =
+              imageInfo?.w && imageInfo?.h
+                ? ` ${imageInfo.w}x${imageInfo.h}`
+                : "";
+
             messageText = `🔐📷 **ENCRYPTED IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${decryptedContent.body || "User shared an encrypted image"}`;
 
             // Attempt to download the encrypted image content

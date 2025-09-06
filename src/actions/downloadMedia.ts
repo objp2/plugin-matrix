@@ -20,7 +20,9 @@ export const downloadMedia: Action = {
     message: Memory,
   ): Promise<boolean> => {
     // Check if Matrix service is available
-    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    const service = runtime.getService(
+      MatrixService.serviceType,
+    ) as MatrixService;
     if (!service?.client) {
       return false;
     }
@@ -30,7 +32,7 @@ export const downloadMedia: Action = {
     if (!content || Object.keys(content).length === 0) {
       return true;
     }
-    
+
     // If content is provided, validate required parameters
     return !!(content.mxcUrl && content.outputPath);
   },
