@@ -288,7 +288,7 @@ export class MatrixService extends Service implements IMatrixService {
       const clientWithCrypto = this.client as any;
       if (clientWithCrypto.crypto) {
         logger.info("Crypto client detected - encryption should be functional");
-        
+
         // The RustSdkCryptoStorageProvider and CryptoClient should handle
         // automatic decryption of encrypted messages
       } else {
@@ -695,10 +695,12 @@ export class MatrixService extends Service implements IMatrixService {
 
         // Check if the event has already been decrypted by the SDK
         // A decrypted event should have msgtype and body in the content
-        if (event.content && 
-            typeof event.content === 'object' && 
-            event.content.msgtype && 
-            event.content.body) {
+        if (
+          event.content &&
+          typeof event.content === "object" &&
+          event.content.msgtype &&
+          event.content.body
+        ) {
           // Message has been decrypted successfully
           decryptedContent = event.content;
           messageText = decryptedContent.body;
@@ -710,9 +712,9 @@ export class MatrixService extends Service implements IMatrixService {
           // Message could not be decrypted or decryption is in progress
           this.runtime.logger.debug(
             `Message from ${event.sender} in room ${roomId} could not be decrypted. ` +
-            `Content type: ${typeof event.content}, has msgtype: ${!!event.content?.msgtype}, has body: ${!!event.content?.body}`,
+              `Content type: ${typeof event.content}, has msgtype: ${!!event.content?.msgtype}, has body: ${!!event.content?.body}`,
           );
-          
+
           // Check if this is actually an encryption error vs a decryption in progress
           if (event.content && event.content.algorithm) {
             this.runtime.logger.debug(
