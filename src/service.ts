@@ -2,9 +2,11 @@ import {
   ChannelType,
   type Character,
   type Content,
+  ContentType,
   EventType,
   type HandlerCallback,
   type IAgentRuntime,
+  type Media,
   type Memory,
   Role,
   Service,
@@ -25,6 +27,8 @@ import {
   MembershipEvent,
   RustSdkCryptoStorageProvider,
 } from "matrix-bot-sdk";
+import * as https from "https";
+import * as http from "http";
 import {
   MATRIX_SERVICE_NAME,
   MATRIX_EVENT_TYPES,
@@ -500,6 +504,108 @@ export class MatrixService extends Service implements IMatrixService {
   }
 
   /**
+   * Download media content from Matrix MXC URL
+   * @param mxcUrl - Matrix content URL
+   * @param mimeType - MIME type of the content
+   * @param fileName - Original filename
+   * @returns Promise resolving to Media object with downloaded content
+   */
+  private async downloadMediaContent(
+    mxcUrl: string,
+    mimeType: string,
+    fileName: string,
+  ): Promise<Media | null> {
+    if (!this.client) {
+      return null;
+    }
+
+    try {
+      // Convert MXC URL to HTTP URL
+      const httpUrl = this.client.mxcToHttp(mxcUrl);
+      if (!httpUrl) {
+        this.runtime.logger.warn(
+          `Failed to convert MXC URL to HTTP: ${mxcUrl}`,
+        );
+        return null;
+      }
+
+      // Download the content as Buffer
+      const contentBuffer = await this.downloadBuffer(httpUrl);
+
+      // Convert Buffer to base64 data URL for VLM consumption
+      const base64Data = contentBuffer.toString("base64");
+      const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+      // Determine content type from MIME type
+      let contentType: ContentType;
+      if (mimeType.startsWith("image/")) {
+        contentType = ContentType.IMAGE;
+      } else if (mimeType.startsWith("video/")) {
+        contentType = ContentType.VIDEO;
+      } else if (mimeType.startsWith("audio/")) {
+        contentType = ContentType.AUDIO;
+      } else {
+        contentType = ContentType.DOCUMENT;
+      }
+
+      return {
+        id: createUniqueUuid(this.runtime, `${mxcUrl}-${fileName}`),
+        url: dataUrl, // Use data URL for direct VLM access
+        title: fileName,
+        source: mxcUrl, // Keep original MXC URL as source
+        description: `${contentType} file: ${fileName}`,
+        text: fileName,
+        contentType,
+      };
+    } catch (error) {
+      this.runtime.logger.error(
+        `Failed to download media content from ${mxcUrl}: ${error}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Download content from URL as Buffer
+   * @param url - HTTP/HTTPS URL to download
+   * @returns Promise resolving to Buffer
+   */
+  private async downloadBuffer(url: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const client = url.startsWith("https:") ? https : http;
+
+      client
+        .get(url, (response) => {
+          if (response.statusCode !== 200) {
+            reject(
+              new Error(
+                `HTTP ${response.statusCode}: ${response.statusMessage}`,
+              ),
+            );
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+
+          response.on("data", (chunk) => {
+            chunks.push(chunk);
+          });
+
+          response.on("end", () => {
+            resolve(Buffer.concat(chunks));
+          });
+
+          response.on("error", (error) => {
+            reject(error);
+          });
+        })
+        .on("error", (error) => {
+          reject(error);
+        });
+    });
+  }
+
+  /**
    * Handle room messages
    */
   private async handleRoomMessage(roomId: string, event: MatrixEvent) {
@@ -576,9 +682,10 @@ export class MatrixService extends Service implements IMatrixService {
         type: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
       });
 
-      // Format message text based on type
+      // Format message text based on type and download media content if applicable
       let messageText = messageContent.body;
       let isMediaMessage = false;
+      let attachments: Media[] = [];
 
       if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.EMOTE) {
         messageText = `*${event.sender} ${messageContent.body}*`;
@@ -599,6 +706,36 @@ export class MatrixService extends Service implements IMatrixService {
         // Add media URL info if available
         if (messageContent.url) {
           messageText += ` (${messageContent.url})`;
+
+          // For images, automatically download content for VLM processing
+          if (
+            messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE &&
+            messageContent.info?.mimetype
+          ) {
+            try {
+              this.runtime.logger.debug(
+                `Downloading image content for VLM processing: ${messageContent.url}`,
+              );
+
+              const mediaAttachment = await this.downloadMediaContent(
+                messageContent.url,
+                messageContent.info.mimetype,
+                messageContent.body || "image",
+              );
+
+              if (mediaAttachment) {
+                attachments.push(mediaAttachment);
+                this.runtime.logger.debug(
+                  `Successfully downloaded image content: ${mediaAttachment.title}`,
+                );
+              }
+            } catch (error) {
+              this.runtime.logger.warn(
+                `Failed to download image content: ${error}`,
+              );
+              // Continue processing without the attachment - don't fail the entire message
+            }
+          }
         }
       }
 
@@ -610,6 +747,7 @@ export class MatrixService extends Service implements IMatrixService {
           text: messageText,
           source: "matrix",
           channelType: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
+          attachments: attachments.length > 0 ? attachments : undefined,
           metadata: {
             messageType: messageContent.msgtype,
             originalEvent: event.event_id,
@@ -753,8 +891,10 @@ export class MatrixService extends Service implements IMatrixService {
         type: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
       });
 
-      // Format message text based on type if decrypted
+      // Format message text based on type if decrypted and download media content
       let isMediaMessage = false;
+      let attachments: Media[] = [];
+
       if (isDecrypted && decryptedContent) {
         if (decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.EMOTE) {
           messageText = `*${event.sender} ${decryptedContent.body}*`;
@@ -775,6 +915,36 @@ export class MatrixService extends Service implements IMatrixService {
           // Add media URL info if available
           if (decryptedContent.url) {
             messageText += ` (${decryptedContent.url})`;
+
+            // For images, automatically download content for VLM processing
+            if (
+              decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE &&
+              decryptedContent.info?.mimetype
+            ) {
+              try {
+                this.runtime.logger.debug(
+                  `Downloading encrypted image content for VLM processing: ${decryptedContent.url}`,
+                );
+
+                const mediaAttachment = await this.downloadMediaContent(
+                  decryptedContent.url,
+                  decryptedContent.info.mimetype,
+                  decryptedContent.body || "encrypted_image",
+                );
+
+                if (mediaAttachment) {
+                  attachments.push(mediaAttachment);
+                  this.runtime.logger.debug(
+                    `Successfully downloaded encrypted image content: ${mediaAttachment.title}`,
+                  );
+                }
+              } catch (error) {
+                this.runtime.logger.warn(
+                  `Failed to download encrypted image content: ${error}`,
+                );
+                // Continue processing without the attachment - don't fail the entire message
+              }
+            }
           }
         }
       }
@@ -787,6 +957,7 @@ export class MatrixService extends Service implements IMatrixService {
           text: messageText,
           source: "matrix",
           channelType: room.isDirect ? ChannelType.DM : ChannelType.GROUP,
+          attachments: attachments.length > 0 ? attachments : undefined,
           metadata: {
             messageType: isDecrypted
               ? decryptedContent?.msgtype || "m.text"
