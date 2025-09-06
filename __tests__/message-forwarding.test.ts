@@ -56,6 +56,7 @@ describe('Matrix Message Forwarding', () => {
         warn: vi.fn(),
         info: vi.fn(),
         success: vi.fn(),
+        debug: vi.fn(),
       },
     };
 
@@ -299,6 +300,9 @@ describe('Matrix Message Forwarding', () => {
     });
 
     it('should process and forward media messages', async () => {
+      // Clear any previous mock calls
+      mockEmitEvent.mockClear();
+      
       // Mock group room (3+ members)
       if (service.client) {
         service.client.getRoomMembers = vi.fn().mockResolvedValue([
@@ -331,7 +335,7 @@ describe('Matrix Message Forwarding', () => {
         expect.objectContaining({
           message: expect.objectContaining({
             content: expect.objectContaining({
-              text: '[IMAGE] photo.jpg (mxc://matrix.org/abc123)',
+              text: expect.stringContaining('📷 **IMAGE ATTACHED**: photo.jpg'),
               metadata: expect.objectContaining({
                 messageType: 'm.image',
                 isMedia: true,

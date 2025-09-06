@@ -199,7 +199,7 @@ describe('Matrix Encryption Improvements', () => {
         expect.objectContaining({
           message: expect.objectContaining({
             content: expect.objectContaining({
-              text: '[IMAGE] secret_photo.jpg (mxc://matrix.org/abc123)',
+              text: expect.stringContaining('🔐📷 **ENCRYPTED IMAGE ATTACHED**: secret_photo.jpg'),
               metadata: expect.objectContaining({
                 messageType: 'm.image',
                 isEncrypted: true,

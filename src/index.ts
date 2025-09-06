@@ -2,6 +2,7 @@ import { type IAgentRuntime, type Plugin, logger } from "@elizaos/core";
 
 // Import actions
 import sendMessage from "./actions/sendMessage";
+import sendImageMessage from "./actions/sendImageMessage";
 import reactToMessage from "./actions/reactToMessage";
 import joinRoom from "./actions/joinRoom";
 import leaveRoom from "./actions/leaveRoom";
@@ -27,6 +28,7 @@ const matrixPlugin: Plugin = {
   services: [MatrixService],
   actions: [
     sendMessage,
+    sendImageMessage,
     reactToMessage,
     joinRoom,
     leaveRoom,
