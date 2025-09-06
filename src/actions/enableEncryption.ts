@@ -15,20 +15,49 @@ export const enableEncryption: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info(
+      "🔍 ENABLE_ENCRYPTION validate method called - this confirms validation is running",
+    );
+
     // Check if Matrix service is available
-    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    const service = runtime.getService(
+      MatrixService.serviceType,
+    ) as MatrixService;
     if (!service?.client) {
+      if (service && typeof service.getServiceStatus === "function") {
+        logger.debug(
+          `ENABLE_ENCRYPTION unavailable - Matrix service status:`,
+          service.getServiceStatus(),
+        );
+      } else if (service) {
+        logger.debug(
+          "ENABLE_ENCRYPTION unavailable - Matrix service found but client not ready",
+        );
+      } else {
+        logger.debug(
+          "ENABLE_ENCRYPTION unavailable - Matrix service not found",
+        );
+      }
       return false;
     }
 
     const content = message.content;
+    logger.debug(`ENABLE_ENCRYPTION validation called with content:`, content);
+
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
+      logger.debug(
+        "ENABLE_ENCRYPTION: No content provided - treating as availability check",
+      );
       return true;
     }
-    
+
     // If content is provided, validate required parameters
-    return !!content.roomId;
+    const isValid = !!content.roomId;
+    logger.debug(`ENABLE_ENCRYPTION: Content validation result: ${isValid}`, {
+      roomId: !!content.roomId,
+    });
+    return isValid;
   },
   handler: async (
     runtime: IAgentRuntime,

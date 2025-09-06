@@ -19,20 +19,48 @@ export const downloadMedia: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info(
+      "🔍 DOWNLOAD_MEDIA validate method called - this confirms validation is running",
+    );
+
     // Check if Matrix service is available
-    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    const service = runtime.getService(
+      MatrixService.serviceType,
+    ) as MatrixService;
     if (!service?.client) {
+      if (service && typeof service.getServiceStatus === "function") {
+        logger.debug(
+          `DOWNLOAD_MEDIA unavailable - Matrix service status:`,
+          service.getServiceStatus(),
+        );
+      } else if (service) {
+        logger.debug(
+          "DOWNLOAD_MEDIA unavailable - Matrix service found but client not ready",
+        );
+      } else {
+        logger.debug("DOWNLOAD_MEDIA unavailable - Matrix service not found");
+      }
       return false;
     }
 
     const content = message.content;
+    logger.debug(`DOWNLOAD_MEDIA validation called with content:`, content);
+
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
+      logger.debug(
+        "DOWNLOAD_MEDIA: No content provided - treating as availability check",
+      );
       return true;
     }
-    
+
     // If content is provided, validate required parameters
-    return !!(content.mxcUrl && content.outputPath);
+    const isValid = !!(content.mxcUrl && content.outputPath);
+    logger.debug(`DOWNLOAD_MEDIA: Content validation result: ${isValid}`, {
+      mxcUrl: !!content.mxcUrl,
+      outputPath: !!content.outputPath,
+    });
+    return isValid;
   },
   handler: async (
     runtime: IAgentRuntime,

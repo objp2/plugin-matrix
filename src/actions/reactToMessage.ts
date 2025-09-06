@@ -15,20 +15,49 @@ export const reactToMessage: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info(
+      "🔍 REACT_TO_MESSAGE validate method called - this confirms validation is running",
+    );
+
     // Check if Matrix service is available
-    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    const service = runtime.getService(
+      MatrixService.serviceType,
+    ) as MatrixService;
     if (!service?.client) {
+      if (service && typeof service.getServiceStatus === "function") {
+        logger.debug(
+          `REACT_TO_MESSAGE unavailable - Matrix service status:`,
+          service.getServiceStatus(),
+        );
+      } else if (service) {
+        logger.debug(
+          "REACT_TO_MESSAGE unavailable - Matrix service found but client not ready",
+        );
+      } else {
+        logger.debug("REACT_TO_MESSAGE unavailable - Matrix service not found");
+      }
       return false;
     }
 
     const content = message.content;
+    logger.debug(`REACT_TO_MESSAGE validation called with content:`, content);
+
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
+      logger.debug(
+        "REACT_TO_MESSAGE: No content provided - treating as availability check",
+      );
       return true;
     }
-    
+
     // If content is provided, validate required parameters
-    return !!(content.eventId && content.roomId && content.reaction);
+    const isValid = !!(content.eventId && content.roomId && content.reaction);
+    logger.debug(`REACT_TO_MESSAGE: Content validation result: ${isValid}`, {
+      eventId: !!content.eventId,
+      roomId: !!content.roomId,
+      reaction: !!content.reaction,
+    });
+    return isValid;
   },
   handler: async (
     runtime: IAgentRuntime,
