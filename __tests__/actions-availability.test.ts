@@ -61,7 +61,6 @@ describe('Matrix Actions Availability Fix', () => {
     
     for (const action of matrixPlugin.actions) {
       const isAvailable = await action.validate(mockRuntime, emptyMessage);
-      console.log(`Action ${action.name}: ${isAvailable} (service: ${!!mockRuntime.getService()}, client: ${!!mockRuntime.getService()?.client})`);
       expect(isAvailable).toBe(true, `${action.name} should be available when service is ready`);
     }
   });
