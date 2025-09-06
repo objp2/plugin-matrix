@@ -152,7 +152,7 @@ describe('Matrix Image Download for VLMs', () => {
       expect(attachment.title).toBe('test-image.jpg');
       expect(attachment.source).toBe('mxc://matrix.org/abc123');
       expect(attachment.url).toMatch(/^data:image\/jpeg;base64,/);
-      expect(attachment.description).toBe('image file: test-image.jpg');
+      expect(attachment.description).toBe('image file: test-image.jpg (0KB)');
       
       // Verify the base64 data is present
       const base64Data = attachment.url.split(',')[1];
@@ -251,9 +251,10 @@ describe('Matrix Image Download for VLMs', () => {
 
       // Should not have attachments due to download failure
       expect(memory.content.attachments).toBeUndefined();
-      expect(memory.content.text).toContain('[IMAGE] missing-image.jpg');
+      expect(memory.content.text).toContain('📷 **IMAGE ATTACHED**: missing-image.jpg');
+      expect(memory.content.text).toContain('⚠️ Image could not be processed - content may not be accessible.');
       
-      // Should have logged the error (the download method logs errors, not warnings)
+      // Should have logged the error
       expect(mockRuntime.logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to download media content')
       );
@@ -349,7 +350,7 @@ describe('Matrix Image Download for VLMs', () => {
       );
 
       expect(result).toBeNull();
-      expect(mockRuntime.logger.warn).toHaveBeenCalledWith(
+      expect(mockRuntime.logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to convert MXC URL to HTTP')
       );
     });

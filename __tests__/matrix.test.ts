@@ -29,7 +29,7 @@ describe('Matrix Plugin', () => {
       expect(matrixPlugin.name).toBe('matrix');
       expect(matrixPlugin.description).toContain('Matrix protocol plugin');
       expect(matrixPlugin.services).toHaveLength(1);
-      expect(matrixPlugin.actions).toHaveLength(8);
+      expect(matrixPlugin.actions).toHaveLength(9);
       expect(matrixPlugin.providers).toHaveLength(2);
     });
 
