@@ -635,7 +635,39 @@ export class MatrixService extends Service implements IMatrixService {
       }
       
       this.runtime.logger.info(`🔍 [DEBUG] Successfully converted to base64, length: ${base64Data.length}`);
+      
+      // Validate the base64 data by attempting to decode it back
+      try {
+        const testDecode = Buffer.from(base64Data, 'base64');
+        if (testDecode.length !== contentBuffer.length) {
+          this.runtime.logger.error(`🔍 [DEBUG] Base64 validation failed: original=${contentBuffer.length} bytes, decoded=${testDecode.length} bytes`);
+          return null;
+        }
+        this.runtime.logger.info(`🔍 [DEBUG] Base64 validation successful: ${testDecode.length} bytes`);
+      } catch (decodeError) {
+        this.runtime.logger.error(`🔍 [DEBUG] Base64 decode validation failed: ${decodeError}`);
+        return null;
+      }
+      
       const dataUrl = `data:${mimeType};base64,${base64Data}`;
+      this.runtime.logger.info(`🔍 [DEBUG] Created data URL: ${dataUrl.substring(0, 100)}... (truncated)`);
+      
+      // Additional validation: check if the image has valid magic bytes
+      if (mimeType.startsWith('image/')) {
+        const firstBytes = contentBuffer.slice(0, 8);
+        this.runtime.logger.info(`🔍 [DEBUG] Image magic bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+        
+        // Check common image format magic bytes
+        let formatDetected = 'unknown';
+        if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
+          formatDetected = 'JPEG';
+        } else if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 && firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
+          formatDetected = 'PNG';
+        } else if (firstBytes[0] === 0x47 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46) {
+          formatDetected = 'GIF';
+        }
+        this.runtime.logger.info(`🔍 [DEBUG] Detected image format from magic bytes: ${formatDetected}`);
+      }
 
       // Determine content type from MIME type
       let contentType: ContentType;
@@ -664,6 +696,18 @@ export class MatrixService extends Service implements IMatrixService {
       };
 
       this.runtime.logger.info(`🔍 [DEBUG] Created media object: id=${media.id}, title=${media.title}, contentType=${media.contentType}, urlStartsWith=${media.url.substring(0, 50)}...`);
+      
+      // Additional detailed logging for VLM debugging
+      this.runtime.logger.info(`🔍 [DEBUG] Media object detailed structure:`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - ID: ${media.id}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Title: ${media.title}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - ContentType: ${media.contentType}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Description: ${media.description}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Text: ${media.text}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Source: ${media.source}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - URL format: data:${mimeType};base64,[${base64Data.length} chars]`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - URL sample: ${media.url.substring(0, 150)}...`);
+      
       this.runtime.logger.success(`Successfully created media object for ${fileName} (${contentType})`);
       return media;
     } catch (error) {
@@ -1003,6 +1047,41 @@ export class MatrixService extends Service implements IMatrixService {
         `🔍 [DEBUG] Final attachments array before sending to agent: length=${attachments.length}, contents=${JSON.stringify(attachments.map(a => ({id: a.id, title: a.title, contentType: a.contentType, urlLength: a.url?.length})))}`,
       );
 
+      // Enhanced attachment debugging for VLM troubleshooting
+      if (attachments.length > 0) {
+        this.runtime.logger.info(`🔍 [DEBUG] AGENT ATTACHMENT DETAILS:`);
+        attachments.forEach((attachment, index) => {
+          this.runtime.logger.info(`🔍 [DEBUG] Attachment ${index + 1}:`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ID: ${attachment.id}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Title: ${attachment.title}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ContentType: ${attachment.contentType}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Description: ${attachment.description}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Text: ${attachment.text}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Source: ${attachment.source}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Type: ${attachment.url?.startsWith('data:') ? 'Data URL' : 'Regular URL'}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Length: ${attachment.url?.length || 0} characters`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Preview: ${attachment.url?.substring(0, 200)}...`);
+          
+          if (attachment.url?.startsWith('data:')) {
+            const [metadata, base64Part] = attachment.url.split(',');
+            this.runtime.logger.info(`🔍 [DEBUG]   - Data URL Metadata: ${metadata}`);
+            this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Data Length: ${base64Part?.length || 0} characters`);
+            
+            // Test if base64 is valid and can be decoded
+            try {
+              const testBuffer = Buffer.from(base64Part || '', 'base64');
+              this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Decode Test: SUCCESS (${testBuffer.length} bytes)`);
+              
+              // Show first few bytes as hex for debugging
+              const firstBytes = testBuffer.slice(0, 16);
+              this.runtime.logger.info(`🔍 [DEBUG]   - First 16 bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+            } catch (decodeError) {
+              this.runtime.logger.error(`🔍 [DEBUG]   - Base64 Decode Test: FAILED - ${decodeError}`);
+            }
+          }
+        });
+      }
+
       const memory: Memory = {
         id: messageUUID,
         entityId,
@@ -1292,6 +1371,41 @@ export class MatrixService extends Service implements IMatrixService {
       this.runtime.logger.info(
         `🔍 [DEBUG] Final encrypted message attachments array before sending to agent: length=${attachments.length}, contents=${JSON.stringify(attachments.map(a => ({id: a.id, title: a.title, contentType: a.contentType, urlLength: a.url?.length})))}`,
       );
+
+      // Enhanced encrypted attachment debugging for VLM troubleshooting
+      if (attachments.length > 0) {
+        this.runtime.logger.info(`🔍 [DEBUG] AGENT ENCRYPTED ATTACHMENT DETAILS:`);
+        attachments.forEach((attachment, index) => {
+          this.runtime.logger.info(`🔍 [DEBUG] Encrypted Attachment ${index + 1}:`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ID: ${attachment.id}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Title: ${attachment.title}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ContentType: ${attachment.contentType}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Description: ${attachment.description}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Text: ${attachment.text}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Source: ${attachment.source}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Type: ${attachment.url?.startsWith('data:') ? 'Data URL' : 'Regular URL'}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Length: ${attachment.url?.length || 0} characters`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Preview: ${attachment.url?.substring(0, 200)}...`);
+          
+          if (attachment.url?.startsWith('data:')) {
+            const [metadata, base64Part] = attachment.url.split(',');
+            this.runtime.logger.info(`🔍 [DEBUG]   - Data URL Metadata: ${metadata}`);
+            this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Data Length: ${base64Part?.length || 0} characters`);
+            
+            // Test if base64 is valid and can be decoded
+            try {
+              const testBuffer = Buffer.from(base64Part || '', 'base64');
+              this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Decode Test: SUCCESS (${testBuffer.length} bytes)`);
+              
+              // Show first few bytes as hex for debugging
+              const firstBytes = testBuffer.slice(0, 16);
+              this.runtime.logger.info(`🔍 [DEBUG]   - First 16 bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+            } catch (decodeError) {
+              this.runtime.logger.error(`🔍 [DEBUG]   - Base64 Decode Test: FAILED - ${decodeError}`);
+            }
+          }
+        });
+      }
 
       const memory: Memory = {
         id: messageUUID,
