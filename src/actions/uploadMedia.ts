@@ -18,15 +18,24 @@ export const uploadMedia: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info(
+      "🔍 UPLOAD_MEDIA validate method called - this confirms validation is running",
+    );
+
     // Check if Matrix service is available
     const service = runtime.getService(
       MatrixService.serviceType,
     ) as MatrixService;
     if (!service?.client) {
-      if (service && typeof service.getServiceStatus === 'function') {
-        logger.debug(`UPLOAD_MEDIA unavailable - Matrix service status:`, service.getServiceStatus());
+      if (service && typeof service.getServiceStatus === "function") {
+        logger.debug(
+          `UPLOAD_MEDIA unavailable - Matrix service status:`,
+          service.getServiceStatus(),
+        );
       } else if (service) {
-        logger.debug("UPLOAD_MEDIA unavailable - Matrix service found but client not ready");
+        logger.debug(
+          "UPLOAD_MEDIA unavailable - Matrix service found but client not ready",
+        );
       } else {
         logger.debug("UPLOAD_MEDIA unavailable - Matrix service not found");
       }
@@ -35,16 +44,21 @@ export const uploadMedia: Action = {
 
     const content = message.content;
     logger.debug(`UPLOAD_MEDIA validation called with content:`, content);
-    
+
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
-      logger.debug("UPLOAD_MEDIA: No content provided - treating as availability check");
+      logger.debug(
+        "UPLOAD_MEDIA: No content provided - treating as availability check",
+      );
       return true;
     }
 
     // If content is provided, validate required parameters
     const isValid = !!(content.filePath && content.roomId);
-    logger.debug(`UPLOAD_MEDIA: Content validation result: ${isValid}`, { filePath: !!content.filePath, roomId: !!content.roomId });
+    logger.debug(`UPLOAD_MEDIA: Content validation result: ${isValid}`, {
+      filePath: !!content.filePath,
+      roomId: !!content.roomId,
+    });
     return isValid;
   },
   handler: async (

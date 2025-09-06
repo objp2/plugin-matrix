@@ -16,17 +16,24 @@ export const listRooms: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
-    logger.info("🔍 LIST_ROOMS validate method called - this confirms validation is running");
-    
+    logger.info(
+      "🔍 LIST_ROOMS validate method called - this confirms validation is running",
+    );
+
     // Check if Matrix service is available
     const service = runtime.getService(
       MatrixService.serviceType,
     ) as MatrixService;
     if (!service?.client) {
-      if (service && typeof service.getServiceStatus === 'function') {
-        logger.debug(`LIST_ROOMS unavailable - Matrix service status:`, service.getServiceStatus());
+      if (service && typeof service.getServiceStatus === "function") {
+        logger.debug(
+          `LIST_ROOMS unavailable - Matrix service status:`,
+          service.getServiceStatus(),
+        );
       } else if (service) {
-        logger.debug("LIST_ROOMS unavailable - Matrix service found but client not ready");
+        logger.debug(
+          "LIST_ROOMS unavailable - Matrix service found but client not ready",
+        );
       } else {
         logger.debug("LIST_ROOMS unavailable - Matrix service not found");
       }

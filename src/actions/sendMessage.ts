@@ -16,17 +16,24 @@ export const sendMessage: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
-    logger.info("🔍 SEND_MESSAGE validate method called - this confirms validation is running");
-    
+    logger.info(
+      "🔍 SEND_MESSAGE validate method called - this confirms validation is running",
+    );
+
     // Check if Matrix service is available
     const service = runtime.getService(
       MatrixService.serviceType,
     ) as MatrixService;
     if (!service?.client) {
-      if (service && typeof service.getServiceStatus === 'function') {
-        logger.debug(`SEND_MESSAGE unavailable - Matrix service status:`, service.getServiceStatus());
+      if (service && typeof service.getServiceStatus === "function") {
+        logger.debug(
+          `SEND_MESSAGE unavailable - Matrix service status:`,
+          service.getServiceStatus(),
+        );
       } else if (service) {
-        logger.debug("SEND_MESSAGE unavailable - Matrix service found but client not ready");
+        logger.debug(
+          "SEND_MESSAGE unavailable - Matrix service found but client not ready",
+        );
       } else {
         logger.debug("SEND_MESSAGE unavailable - Matrix service not found");
       }
@@ -35,16 +42,21 @@ export const sendMessage: Action = {
 
     const content = message.content;
     logger.debug(`SEND_MESSAGE validation called with content:`, content);
-    
+
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
-      logger.debug("SEND_MESSAGE: No content provided - treating as availability check");
+      logger.debug(
+        "SEND_MESSAGE: No content provided - treating as availability check",
+      );
       return true;
     }
 
     // If content is provided, validate required parameters
     const isValid = !!(content.text && content.roomId);
-    logger.debug(`SEND_MESSAGE: Content validation result: ${isValid}`, { text: !!content.text, roomId: !!content.roomId });
+    logger.debug(`SEND_MESSAGE: Content validation result: ${isValid}`, {
+      text: !!content.text,
+      roomId: !!content.roomId,
+    });
     return isValid;
   },
   handler: async (
