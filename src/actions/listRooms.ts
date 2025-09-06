@@ -21,6 +21,13 @@ export const listRooms: Action = {
       MatrixService.serviceType,
     ) as MatrixService;
     if (!service?.client) {
+      if (service && typeof service.getServiceStatus === 'function') {
+        logger.debug(`LIST_ROOMS unavailable - Matrix service status:`, service.getServiceStatus());
+      } else if (service) {
+        logger.debug("LIST_ROOMS unavailable - Matrix service found but client not ready");
+      } else {
+        logger.debug("LIST_ROOMS unavailable - Matrix service not found");
+      }
       return false;
     }
 

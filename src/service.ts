@@ -80,24 +80,42 @@ export class MatrixService extends Service implements IMatrixService {
         .filter((s) => s.length > 0);
     }
 
+    logger.info("Initializing Matrix service...");
+
     try {
+      // Check for required environment variables first
+      const homeserverUrl = runtime.getSetting("MATRIX_HOMESERVER_URL") as string;
+      const accessToken = runtime.getSetting("MATRIX_ACCESS_TOKEN") as string;
+      const userId = runtime.getSetting("MATRIX_USER_ID") as string;
+
+      logger.debug("Matrix configuration check:", {
+        homeserverUrl: homeserverUrl ? `${homeserverUrl.substring(0, 20)}...` : "[NOT SET]",
+        accessToken: accessToken ? `[PRESENT, length=${accessToken.length}]` : "[NOT SET]",
+        userId: userId || "[NOT SET]",
+      });
+
       // Validate environment configuration
       const config = validateMatrixConfig({
-        MATRIX_HOMESERVER_URL: runtime.getSetting("MATRIX_HOMESERVER_URL"),
-        MATRIX_ACCESS_TOKEN: runtime.getSetting("MATRIX_ACCESS_TOKEN"),
-        MATRIX_USER_ID: runtime.getSetting("MATRIX_USER_ID"),
+        MATRIX_HOMESERVER_URL: homeserverUrl,
+        MATRIX_ACCESS_TOKEN: accessToken,
+        MATRIX_USER_ID: userId,
         MATRIX_ROOM_IDS: runtime.getSetting("MATRIX_ROOM_IDS"),
         MATRIX_ENCRYPTION_ENABLED: runtime.getSetting(
           "MATRIX_ENCRYPTION_ENABLED",
         ),
       });
 
+      logger.success("Matrix configuration validation passed");
+
       if (
         !config.MATRIX_ACCESS_TOKEN ||
         config.MATRIX_ACCESS_TOKEN.trim() === ""
       ) {
-        logger.warn(
-          "Matrix access token not provided - Matrix functionality will be unavailable",
+        logger.error(
+          "Matrix access token not provided - Matrix actions will be unavailable",
+        );
+        logger.error(
+          "To fix this: Set MATRIX_ACCESS_TOKEN environment variable with a valid Matrix access token",
         );
         this.client = null;
         return;
@@ -120,6 +138,8 @@ export class MatrixService extends Service implements IMatrixService {
         }
       }
 
+      logger.info(`Creating Matrix client for ${config.MATRIX_USER_ID} on ${config.MATRIX_HOMESERVER_URL}`);
+
       this.client = new MatrixClient(
         config.MATRIX_HOMESERVER_URL,
         config.MATRIX_ACCESS_TOKEN,
@@ -133,11 +153,13 @@ export class MatrixService extends Service implements IMatrixService {
       this.setupEventListeners();
       this.registerSendHandler();
 
+      logger.info("Starting Matrix client...");
+
       // Start the client
       this.client
         .start()
         .then(async () => {
-          logger.success("Matrix client started successfully");
+          logger.success("Matrix client started successfully - Matrix actions are now available");
 
           // Initialize encryption if enabled
           if (config.MATRIX_ENCRYPTION_ENABLED) {
@@ -150,14 +172,50 @@ export class MatrixService extends Service implements IMatrixService {
           logger.error(
             `Failed to start Matrix client: ${error instanceof Error ? error.message : String(error)}`,
           );
+          logger.error(
+            "Matrix actions will be unavailable. Common causes:",
+          );
+          logger.error("- Invalid MATRIX_ACCESS_TOKEN");
+          logger.error("- Network connectivity issues");
+          logger.error("- Invalid MATRIX_HOMESERVER_URL");
+          logger.error("- Homeserver authentication problems");
           this.client = null;
         });
     } catch (error) {
-      runtime.logger.error(
-        `Error initializing Matrix client: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      if (error instanceof Error && error.message.includes("Matrix configuration validation failed")) {
+        logger.error(`Matrix configuration error: ${error.message}`);
+        logger.error("Matrix actions will be unavailable. Please check your environment variables:");
+        logger.error("- MATRIX_HOMESERVER_URL: Must be a valid URL (e.g., https://matrix.org)");
+        logger.error("- MATRIX_ACCESS_TOKEN: Must be a valid Matrix access token");
+        logger.error("- MATRIX_USER_ID: Must be in format @username:homeserver.tld");
+      } else {
+        runtime.logger.error(
+          `Error initializing Matrix client: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       this.client = null;
     }
+  }
+
+  /**
+   * Check if the Matrix service is ready for use
+   * @returns true if the service is ready, false otherwise
+   */
+  public isReady(): boolean {
+    return this.client !== null;
+  }
+
+  /**
+   * Get detailed service status for debugging
+   * @returns object with service status information
+   */
+  public getServiceStatus() {
+    return {
+      isReady: this.isReady(),
+      hasClient: !!this.client,
+      allowedRooms: this.allowedRoomIds?.length || 0,
+      dynamicRooms: this.dynamicRoomIds.size,
+    };
   }
 
   static async start(runtime: IAgentRuntime) {
