@@ -836,15 +836,44 @@ export class MatrixService extends Service implements IMatrixService {
           messageText = `📷 **IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${messageContent.body || "User shared an image"}`;
 
           // Attempt to download the image content
-          if (messageContent.info?.mimetype) {
+          let mimeType = messageContent.info?.mimetype;
+          
+          // If no mimetype provided, try to detect from URL extension
+          if (!mimeType && messageContent.url) {
+            const urlLower = messageContent.url.toLowerCase();
+            if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) {
+              mimeType = 'image/jpeg';
+            } else if (urlLower.includes('.png')) {
+              mimeType = 'image/png';
+            } else if (urlLower.includes('.gif')) {
+              mimeType = 'image/gif';
+            } else if (urlLower.includes('.webp')) {
+              mimeType = 'image/webp';
+            } else if (urlLower.includes('.bmp')) {
+              mimeType = 'image/bmp';
+            } else if (urlLower.includes('.svg')) {
+              mimeType = 'image/svg+xml';
+            } else {
+              // Default fallback for unknown image types
+              mimeType = 'image/jpeg';
+            }
+            
+            if (!messageContent.info?.mimetype) {
+              this.runtime.logger.info(
+                `No mimetype provided for image, detected from URL: ${mimeType}`,
+              );
+            }
+          }
+          
+          if (mimeType) {
             try {
               this.runtime.logger.info(
-                `Downloading image for VLM processing: ${fileName} (${messageContent.info.mimetype})`,
+                `Downloading image for VLM processing: ${fileName} (${mimeType})`,
               );
 
               const mediaAttachment = await this.downloadMediaContent(
                 messageContent.url,
-                messageContent.info.mimetype,
+                mimeType,
                 fileName,
               );
 
@@ -867,9 +896,9 @@ export class MatrixService extends Service implements IMatrixService {
               );
             }
           } else {
-            messageText += `\n\n⚠️ Image metadata incomplete - cannot process for analysis.`;
+            messageText += `\n\n⚠️ Image cannot be processed - no valid content type detected.`;
             this.runtime.logger.warn(
-              `Image message missing MIME type info: ${messageContent.url}`,
+              `Unable to determine content type for image: ${messageContent.url}`,
             );
           }
         } else {
@@ -1067,16 +1096,45 @@ export class MatrixService extends Service implements IMatrixService {
             
             messageText = `🔐📷 **ENCRYPTED IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${decryptedContent.body || "User shared an encrypted image"}`;
 
-            // Attempt to download the encrypted image content
-            if (decryptedContent.info?.mimetype) {
+            // Attempt to download the encrypted image content  
+            let mimeType = decryptedContent.info?.mimetype;
+            
+            // If no mimetype provided, try to detect from URL extension
+            if (!mimeType && decryptedContent.url) {
+              const urlLower = decryptedContent.url.toLowerCase();
+              if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) {
+                mimeType = 'image/jpeg';
+              } else if (urlLower.includes('.png')) {
+                mimeType = 'image/png';
+              } else if (urlLower.includes('.gif')) {
+                mimeType = 'image/gif';
+              } else if (urlLower.includes('.webp')) {
+                mimeType = 'image/webp';
+              } else if (urlLower.includes('.bmp')) {
+                mimeType = 'image/bmp';
+              } else if (urlLower.includes('.svg')) {
+                mimeType = 'image/svg+xml';
+              } else {
+                // Default fallback for unknown image types
+                mimeType = 'image/jpeg';
+              }
+              
+              if (!decryptedContent.info?.mimetype) {
+                this.runtime.logger.info(
+                  `No mimetype provided for encrypted image, detected from URL: ${mimeType}`,
+                );
+              }
+            }
+            
+            if (mimeType) {
               try {
                 this.runtime.logger.info(
-                  `Downloading encrypted image for VLM processing: ${fileName} (${decryptedContent.info.mimetype})`,
+                  `Downloading encrypted image for VLM processing: ${fileName} (${mimeType})`,
                 );
 
                 const mediaAttachment = await this.downloadMediaContent(
                   decryptedContent.url,
-                  decryptedContent.info.mimetype,
+                  mimeType,
                   fileName,
                 );
 
@@ -1099,9 +1157,9 @@ export class MatrixService extends Service implements IMatrixService {
                 );
               }
             } else {
-              messageText += `\n\n⚠️ Encrypted image metadata incomplete - cannot process for analysis.`;
+              messageText += `\n\n⚠️ Encrypted image cannot be processed - no valid content type detected.`;
               this.runtime.logger.warn(
-                `Encrypted image message missing MIME type info: ${decryptedContent.url}`,
+                `Unable to determine content type for encrypted image: ${decryptedContent.url}`,
               );
             }
           } else {
