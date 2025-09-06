@@ -81,6 +81,14 @@ export const listRooms: Action = {
         message.content.roomsList = roomsText;
       }
 
+      // Store room information in agent state so it can access it for decision-making
+      if (state) {
+        state.values = state.values || {};
+        state.values.rooms = joinedRooms;
+        state.values.roomsList = roomsText;
+        state.values.roomCount = joinedRooms.length;
+      }
+
       return true;
     } catch (error) {
       logger.error(`Failed to list rooms: ${error}`);

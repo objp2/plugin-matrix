@@ -230,4 +230,54 @@ describe('Actions', () => {
       expect(await joinAction.validate(mockRuntime, invalidMessage)).toBe(false);
     });
   });
+
+  describe('List Rooms Action', () => {
+    it('should store room information in state for agent access', async () => {
+      const listRoomsAction = matrixPlugin.actions.find(a => a.name === 'LIST_ROOMS')!;
+      
+      // Mock service with room data
+      const mockRooms = ['!room1:matrix.org', '!room2:matrix.org'];
+      mockService.client.getJoinedRooms = vi.fn().mockResolvedValue(mockRooms);
+      mockService.client.getRoomState = vi.fn().mockResolvedValue([
+        { type: 'm.room.name', content: { name: 'Test Room' } }
+      ]);
+      mockService.client.getRoomMembers = vi.fn().mockResolvedValue(['@user1:matrix.org', '@user2:matrix.org']);
+      mockService.getRoomInfo = vi.fn().mockResolvedValue({
+        id: '!room1:matrix.org',
+        name: 'Test Room',
+        isDirect: false,
+        isEncrypted: false,
+        memberCount: 2
+      });
+      mockService.isRoomAllowed = vi.fn().mockReturnValue(true);
+
+      const message = { content: {} } as any;
+      const state = { values: {}, data: {}, text: '' } as any;
+
+      const result = await listRoomsAction.handler(mockRuntime, message, state);
+
+      expect(result).toBe(true);
+      expect(state.values.rooms).toEqual(mockRooms);
+      expect(state.values.roomCount).toBe(2);
+      expect(state.values.roomsList).toBeDefined();
+      expect(typeof state.values.roomsList).toBe('string');
+      expect(state.values.roomsList).toContain('Test Room');
+    });
+
+    it('should handle empty room list correctly', async () => {
+      const listRoomsAction = matrixPlugin.actions.find(a => a.name === 'LIST_ROOMS')!;
+      
+      mockService.client.getJoinedRooms = vi.fn().mockResolvedValue([]);
+
+      const message = { content: {} } as any;
+      const state = { values: {}, data: {}, text: '' } as any;
+
+      const result = await listRoomsAction.handler(mockRuntime, message, state);
+
+      expect(result).toBe(true);
+      expect(state.values.rooms).toBeUndefined();
+      expect(state.values.roomCount).toBeUndefined();
+      expect(state.values.roomsList).toBeUndefined();
+    });
+  });
 });
