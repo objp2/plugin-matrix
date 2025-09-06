@@ -21,17 +21,29 @@ export const sendMessage: Action = {
       MatrixService.serviceType,
     ) as MatrixService;
     if (!service?.client) {
+      if (service && typeof service.getServiceStatus === 'function') {
+        logger.debug(`SEND_MESSAGE unavailable - Matrix service status:`, service.getServiceStatus());
+      } else if (service) {
+        logger.debug("SEND_MESSAGE unavailable - Matrix service found but client not ready");
+      } else {
+        logger.debug("SEND_MESSAGE unavailable - Matrix service not found");
+      }
       return false;
     }
 
     const content = message.content;
+    logger.debug(`SEND_MESSAGE validation called with content:`, content);
+    
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
+      logger.debug("SEND_MESSAGE: No content provided - treating as availability check");
       return true;
     }
 
     // If content is provided, validate required parameters
-    return !!(content.text && content.roomId);
+    const isValid = !!(content.text && content.roomId);
+    logger.debug(`SEND_MESSAGE: Content validation result: ${isValid}`, { text: !!content.text, roomId: !!content.roomId });
+    return isValid;
   },
   handler: async (
     runtime: IAgentRuntime,

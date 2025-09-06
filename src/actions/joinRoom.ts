@@ -20,17 +20,29 @@ export const joinRoom: Action = {
       MatrixService.serviceType,
     ) as MatrixService;
     if (!service?.client) {
+      if (service && typeof service.getServiceStatus === 'function') {
+        logger.debug(`JOIN_ROOM unavailable - Matrix service status:`, service.getServiceStatus());
+      } else if (service) {
+        logger.debug("JOIN_ROOM unavailable - Matrix service found but client not ready");
+      } else {
+        logger.debug("JOIN_ROOM unavailable - Matrix service not found");
+      }
       return false;
     }
 
     const content = message.content;
+    logger.debug(`JOIN_ROOM validation called with content:`, content);
+    
     // If no content provided, this is likely an availability check - return true if service is ready
     if (!content || Object.keys(content).length === 0) {
+      logger.debug("JOIN_ROOM: No content provided - treating as availability check");
       return true;
     }
 
     // If content is provided, validate required parameters
-    return !!(content.roomId || content.roomAlias);
+    const isValid = !!(content.roomId || content.roomAlias);
+    logger.debug(`JOIN_ROOM: Content validation result: ${isValid}`, { roomId: !!content.roomId, roomAlias: !!content.roomAlias });
+    return isValid;
   },
   handler: async (
     runtime: IAgentRuntime,
