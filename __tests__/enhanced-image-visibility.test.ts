@@ -355,7 +355,7 @@ describe('Enhanced Image Visibility for Agents', () => {
 
       // Verify detailed logging was called
       expect(mockRuntime.logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Downloading image for VLM processing: detailed-log-test.jpg')
+        expect.stringContaining('🔍 [DEBUG] Image message details - fileName: detailed-log-test.jpg')
       );
       expect(mockRuntime.logger.success).toHaveBeenCalledWith(
         expect.stringContaining('Successfully downloaded and attached image: detailed-log-test.jpg')

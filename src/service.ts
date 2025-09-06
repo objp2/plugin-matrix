@@ -530,6 +530,7 @@ export class MatrixService extends Service implements IMatrixService {
     this.client.on(
       "room.message",
       async (roomId: string, event: MatrixEvent) => {
+        this.runtime.logger.info(`🔍 [DEBUG] room.message event received - roomId: ${roomId}, eventType: ${event.type}, sender: ${event.sender}`);
         try {
           await this.handleRoomMessage(roomId, event);
         } catch (error) {
@@ -540,6 +541,7 @@ export class MatrixService extends Service implements IMatrixService {
 
     // Handle room member events
     this.client.on("room.event", async (roomId: string, event: MatrixEvent) => {
+      this.runtime.logger.info(`🔍 [DEBUG] room.event received - roomId: ${roomId}, eventType: ${event.type}, sender: ${event.sender}`);
       try {
         if (event.type === MATRIX_EVENT_TYPES.MEMBER) {
           await this.handleMemberEvent(roomId, event);
@@ -547,9 +549,13 @@ export class MatrixService extends Service implements IMatrixService {
           await this.handleReactionEvent(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.MESSAGE) {
           // Handle regular messages that come through room.event instead of room.message
+          this.runtime.logger.info(`🔍 [DEBUG] Message event received via room.event, forwarding to handleRoomMessage`);
           await this.handleRoomMessage(roomId, event);
         } else if (event.type === MATRIX_EVENT_TYPES.ENCRYPTED) {
+          this.runtime.logger.info(`🔍 [DEBUG] Encrypted message event received, forwarding to handleEncryptedMessage`);
           await this.handleEncryptedMessage(roomId, event);
+        } else {
+          this.runtime.logger.debug(`🔍 [DEBUG] Unhandled room.event type: ${event.type}`);
         }
       } catch (error) {
         this.runtime.logger.error(`Error handling room event: ${error}`);
@@ -587,41 +593,81 @@ export class MatrixService extends Service implements IMatrixService {
     mimeType: string,
     fileName: string,
   ): Promise<Media | null> {
+    this.runtime.logger.info(`🔍 [DEBUG] downloadMediaContent called with: mxcUrl=${mxcUrl}, mimeType=${mimeType}, fileName=${fileName}`);
+    
     if (!this.client) {
-      this.runtime.logger.error("Matrix client not available for media download");
+      this.runtime.logger.error("🔍 [DEBUG] Matrix client not available for media download");
       return null;
     }
 
     try {
       // Convert MXC URL to HTTP URL
+      this.runtime.logger.info(`🔍 [DEBUG] Converting MXC URL to HTTP: ${mxcUrl}`);
       const httpUrl = this.client.mxcToHttp(mxcUrl);
       if (!httpUrl) {
         this.runtime.logger.error(
-          `Failed to convert MXC URL to HTTP: ${mxcUrl}`,
+          `🔍 [DEBUG] Failed to convert MXC URL to HTTP: ${mxcUrl}`,
         );
         return null;
       }
 
-      this.runtime.logger.debug(`Converted MXC URL ${mxcUrl} to HTTP URL: ${httpUrl}`);
+      this.runtime.logger.info(`🔍 [DEBUG] Converted MXC URL ${mxcUrl} to HTTP URL: ${httpUrl}`);
 
       // Download the content as Buffer with improved error handling
+      this.runtime.logger.info(`🔍 [DEBUG] About to call downloadBuffer for: ${httpUrl}`);
       const contentBuffer = await this.downloadBuffer(httpUrl);
       
+      this.runtime.logger.info(`🔍 [DEBUG] downloadBuffer returned buffer of length: ${contentBuffer ? contentBuffer.length : 'null'}`);
+      
       if (!contentBuffer || contentBuffer.length === 0) {
-        this.runtime.logger.error(`Downloaded empty content from ${httpUrl}`);
+        this.runtime.logger.error(`🔍 [DEBUG] Downloaded empty content from ${httpUrl}`);
         return null;
       }
 
-      this.runtime.logger.debug(`Successfully downloaded ${contentBuffer.length} bytes from ${httpUrl}`);
+      this.runtime.logger.info(`🔍 [DEBUG] Successfully downloaded ${contentBuffer.length} bytes from ${httpUrl}`);
 
       // Convert Buffer to base64 data URL for VLM consumption
+      this.runtime.logger.info(`🔍 [DEBUG] Converting buffer to base64...`);
       const base64Data = contentBuffer.toString("base64");
       if (!base64Data) {
-        this.runtime.logger.error(`Failed to convert downloaded content to base64 for ${mxcUrl}`);
+        this.runtime.logger.error(`🔍 [DEBUG] Failed to convert downloaded content to base64 for ${mxcUrl}`);
+        return null;
+      }
+      
+      this.runtime.logger.info(`🔍 [DEBUG] Successfully converted to base64, length: ${base64Data.length}`);
+      
+      // Validate the base64 data by attempting to decode it back
+      try {
+        const testDecode = Buffer.from(base64Data, 'base64');
+        if (testDecode.length !== contentBuffer.length) {
+          this.runtime.logger.error(`🔍 [DEBUG] Base64 validation failed: original=${contentBuffer.length} bytes, decoded=${testDecode.length} bytes`);
+          return null;
+        }
+        this.runtime.logger.info(`🔍 [DEBUG] Base64 validation successful: ${testDecode.length} bytes`);
+      } catch (decodeError) {
+        this.runtime.logger.error(`🔍 [DEBUG] Base64 decode validation failed: ${decodeError}`);
         return null;
       }
       
       const dataUrl = `data:${mimeType};base64,${base64Data}`;
+      this.runtime.logger.info(`🔍 [DEBUG] Created data URL: ${dataUrl.substring(0, 100)}... (truncated)`);
+      
+      // Additional validation: check if the image has valid magic bytes
+      if (mimeType.startsWith('image/')) {
+        const firstBytes = contentBuffer.slice(0, 8);
+        this.runtime.logger.info(`🔍 [DEBUG] Image magic bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+        
+        // Check common image format magic bytes
+        let formatDetected = 'unknown';
+        if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
+          formatDetected = 'JPEG';
+        } else if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 && firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
+          formatDetected = 'PNG';
+        } else if (firstBytes[0] === 0x47 && firstBytes[1] === 0x49 && firstBytes[2] === 0x46) {
+          formatDetected = 'GIF';
+        }
+        this.runtime.logger.info(`🔍 [DEBUG] Detected image format from magic bytes: ${formatDetected}`);
+      }
 
       // Determine content type from MIME type
       let contentType: ContentType;
@@ -635,6 +681,8 @@ export class MatrixService extends Service implements IMatrixService {
         contentType = ContentType.DOCUMENT;
       }
 
+      this.runtime.logger.info(`🔍 [DEBUG] Determined contentType: ${contentType}`);
+
       const mediaId = createUniqueUuid(this.runtime, `${mxcUrl}-${fileName}`);
       
       const media: Media = {
@@ -647,12 +695,26 @@ export class MatrixService extends Service implements IMatrixService {
         contentType,
       };
 
+      this.runtime.logger.info(`🔍 [DEBUG] Created media object: id=${media.id}, title=${media.title}, contentType=${media.contentType}, urlStartsWith=${media.url.substring(0, 50)}...`);
+      
+      // Additional detailed logging for VLM debugging
+      this.runtime.logger.info(`🔍 [DEBUG] Media object detailed structure:`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - ID: ${media.id}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Title: ${media.title}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - ContentType: ${media.contentType}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Description: ${media.description}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Text: ${media.text}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - Source: ${media.source}`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - URL format: data:${mimeType};base64,[${base64Data.length} chars]`);
+      this.runtime.logger.info(`🔍 [DEBUG]   - URL sample: ${media.url.substring(0, 150)}...`);
+      
       this.runtime.logger.success(`Successfully created media object for ${fileName} (${contentType})`);
       return media;
     } catch (error) {
       this.runtime.logger.error(
-        `Failed to download media content from ${mxcUrl}: ${error instanceof Error ? error.message : String(error)}`,
+        `🔍 [DEBUG] Failed to download media content from ${mxcUrl}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      this.runtime.logger.error(`🔍 [DEBUG] Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
       return null;
     }
   }
@@ -663,21 +725,29 @@ export class MatrixService extends Service implements IMatrixService {
    * @returns Promise resolving to Buffer
    */
   private async downloadBuffer(url: string): Promise<Buffer> {
+    this.runtime.logger.info(`🔍 [DEBUG] downloadBuffer called with URL: ${url}`);
+    
     return new Promise((resolve, reject) => {
       const client = url.startsWith("https:") ? https : http;
+      this.runtime.logger.info(`🔍 [DEBUG] Using ${url.startsWith("https:") ? 'HTTPS' : 'HTTP'} client`);
       
       // Set a timeout for the request (30 seconds)
       const timeout = setTimeout(() => {
+        this.runtime.logger.error(`🔍 [DEBUG] Download timeout after 30 seconds for URL: ${url}`);
         reject(new Error(`Download timeout after 30 seconds for URL: ${url}`));
       }, 30000);
 
+      this.runtime.logger.info(`🔍 [DEBUG] Making HTTP request to: ${url}`);
+      
       const request = client
         .get(url, (response) => {
           clearTimeout(timeout);
           
+          this.runtime.logger.info(`🔍 [DEBUG] Received response with status: ${response.statusCode}`);
+          
           if (response.statusCode !== 200) {
             const errorMsg = `HTTP ${response.statusCode}: ${response.statusMessage || 'Unknown error'} for URL: ${url}`;
-            this.runtime.logger.error(errorMsg);
+            this.runtime.logger.error(`🔍 [DEBUG] ${errorMsg}`);
             reject(new Error(errorMsg));
             return;
           }
@@ -686,10 +756,15 @@ export class MatrixService extends Service implements IMatrixService {
           let totalSize = 0;
           const maxSize = 50 * 1024 * 1024; // 50MB limit
 
+          this.runtime.logger.info(`🔍 [DEBUG] Starting to receive data chunks...`);
+
           response.on("data", (chunk: Buffer) => {
             totalSize += chunk.length;
+            this.runtime.logger.debug(`🔍 [DEBUG] Received chunk of ${chunk.length} bytes, total: ${totalSize}`);
+            
             if (totalSize > maxSize) {
               clearTimeout(timeout);
+              this.runtime.logger.error(`🔍 [DEBUG] File too large: ${totalSize} bytes exceeds 50MB limit`);
               reject(new Error(`File too large: ${totalSize} bytes exceeds 50MB limit`));
               return;
             }
@@ -699,13 +774,13 @@ export class MatrixService extends Service implements IMatrixService {
           response.on("end", () => {
             clearTimeout(timeout);
             const buffer = Buffer.concat(chunks);
-            this.runtime.logger.debug(`Downloaded ${buffer.length} bytes from ${url}`);
+            this.runtime.logger.info(`🔍 [DEBUG] Download completed successfully: ${buffer.length} bytes from ${url}`);
             resolve(buffer);
           });
 
           response.on("error", (error) => {
             clearTimeout(timeout);
-            this.runtime.logger.error(`Response error for ${url}: ${error.message}`);
+            this.runtime.logger.error(`🔍 [DEBUG] Response error for ${url}: ${error.message}`);
             reject(error);
           });
         })
@@ -729,13 +804,17 @@ export class MatrixService extends Service implements IMatrixService {
    */
   private async handleRoomMessage(roomId: string, event: MatrixEvent) {
     try {
+      this.runtime.logger.info(`🔍 [DEBUG] handleRoomMessage called - sender: ${event.sender}, roomId: ${roomId}, eventType: ${event.type}, eventId: ${event.event_id}`);
+      
       // Skip if we're sending the message
       if (event.sender === (await this.client?.getUserId())) {
+        this.runtime.logger.info(`🔍 [DEBUG] Skipping message from self: ${event.sender}`);
         return;
       }
 
       // Skip if room restrictions are set and this room is not allowed
       if (this.allowedRoomIds && !this.isRoomAllowed(roomId)) {
+        this.runtime.logger.info(`🔍 [DEBUG] Skipping message from non-allowed room: ${roomId}`);
         return;
       }
 
@@ -744,13 +823,18 @@ export class MatrixService extends Service implements IMatrixService {
         this.matrixSettings.shouldIgnoreBotMessages &&
         event.sender.includes("bot")
       ) {
+        this.runtime.logger.info(`🔍 [DEBUG] Skipping bot message from: ${event.sender}`);
         return;
       }
 
       const messageContent = event.content as MessageEventContent;
       if (!messageContent) {
+        this.runtime.logger.info(`🔍 [DEBUG] No message content found in event`);
         return;
       }
+
+      this.runtime.logger.info(`🔍 [DEBUG] Message content - msgtype: ${messageContent.msgtype}, body: ${messageContent.body?.substring(0, 100)}..., url: ${messageContent.url || 'none'}`);
+      this.runtime.logger.info(`🔍 [DEBUG] Full message content structure: ${JSON.stringify(messageContent, null, 2)}`);
 
       // Handle supported message types
       const supportedTypes = [
@@ -766,11 +850,17 @@ export class MatrixService extends Service implements IMatrixService {
       if (!supportedTypes.includes(messageContent.msgtype)) {
         if (messageContent.msgtype) {
           this.runtime.logger.debug(
-            `Received unsupported message type ${messageContent.msgtype} in room ${roomId}`,
+            `🔍 [DEBUG] Received unsupported message type ${messageContent.msgtype} in room ${roomId}`,
+          );
+        } else {
+          this.runtime.logger.debug(
+            `🔍 [DEBUG] Received message with no msgtype in room ${roomId}`,
           );
         }
         return;
       }
+
+      this.runtime.logger.info(`🔍 [DEBUG] Message type ${messageContent.msgtype} is supported, proceeding with processing`);
 
       const room = await this.getRoomInfo(roomId);
       const roomUUID = createUniqueUuid(this.runtime, roomId);
@@ -822,9 +912,10 @@ export class MatrixService extends Service implements IMatrixService {
         const mediaType = messageContent.msgtype.replace("m.", "");
         
         // For images, attempt to download content for VLM processing
-        if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && messageContent.url) {
+        this.runtime.logger.info(`🔍 [DEBUG] Checking image condition - msgtype: "${messageContent.msgtype}", expectedType: "${MATRIX_MESSAGE_TYPES.IMAGE}", url: "${messageContent.url}", file: ${messageContent.file ? 'present' : 'none'}, hasUrl: ${!!messageContent.url}, hasFile: ${!!messageContent.file}`);
+        if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && (messageContent.url || messageContent.file)) {
           this.runtime.logger.debug(
-            `Processing image message for VLM: ${messageContent.url}`,
+            `🔍 [DEBUG] Processing image message for VLM: ${messageContent.url || messageContent.file?.url || 'no URL found'}`,
           );
 
           // Always indicate that an image is present in the message text
@@ -835,21 +926,92 @@ export class MatrixService extends Service implements IMatrixService {
           
           messageText = `📷 **IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${messageContent.body || "User shared an image"}`;
 
+          // Determine the media URL - check both url and file fields
+          let mediaUrl: string;
+          let isEncrypted = false;
+          
+          if (messageContent.url) {
+            // Standard non-encrypted image
+            mediaUrl = messageContent.url;
+            this.runtime.logger.info(`🔍 [DEBUG] Using standard URL field: ${mediaUrl}`);
+          } else if (messageContent.file?.url) {
+            // Encrypted image content
+            mediaUrl = messageContent.file.url;
+            isEncrypted = true;
+            this.runtime.logger.info(`🔍 [DEBUG] Using encrypted file URL field: ${mediaUrl}`);
+          } else {
+            this.runtime.logger.error(`🔍 [DEBUG] No valid URL found in message content`);
+            messageText += `\n\n❌ Error: No valid image URL found in message`;
+            return; // Skip processing if no URL found
+          }
+
+          this.runtime.logger.info(
+            `🔍 [DEBUG] Image message details - fileName: ${fileName}, mediaUrl: ${mediaUrl}, isEncrypted: ${isEncrypted}, originalMimeType: ${messageContent.info?.mimetype || 'undefined'}`,
+          );
+
           // Attempt to download the image content
-          if (messageContent.info?.mimetype) {
+          let mimeType = messageContent.info?.mimetype;
+          
+          // If no mimetype provided, try to detect from URL extension
+          if (!mimeType && mediaUrl) {
+            const urlLower = mediaUrl.toLowerCase();
+            this.runtime.logger.info(
+              `🔍 [DEBUG] No mimetype provided, detecting from URL: ${urlLower}`,
+            );
+            
+            if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) {
+              mimeType = 'image/jpeg';
+            } else if (urlLower.includes('.png')) {
+              mimeType = 'image/png';
+            } else if (urlLower.includes('.gif')) {
+              mimeType = 'image/gif';
+            } else if (urlLower.includes('.webp')) {
+              mimeType = 'image/webp';
+            } else if (urlLower.includes('.bmp')) {
+              mimeType = 'image/bmp';
+            } else if (urlLower.includes('.svg')) {
+              mimeType = 'image/svg+xml';
+            } else {
+              // Default fallback for unknown image types
+              mimeType = 'image/jpeg';
+            }
+            
+            this.runtime.logger.info(
+              `🔍 [DEBUG] MIME type detection result: ${mimeType}`,
+            );
+            
+            if (!messageContent.info?.mimetype) {
+              this.runtime.logger.info(
+                `No mimetype provided for image, detected from URL: ${mimeType}`,
+              );
+            }
+          } else {
+            this.runtime.logger.info(
+              `🔍 [DEBUG] Using provided mimetype: ${mimeType}`,
+            );
+          }
+          
+          if (mimeType) {
             try {
               this.runtime.logger.info(
-                `Downloading image for VLM processing: ${fileName} (${messageContent.info.mimetype})`,
+                `🔍 [DEBUG] About to call downloadMediaContent with: url=${mediaUrl}, mimeType=${mimeType}, fileName=${fileName}, isEncrypted=${isEncrypted}`,
               );
 
               const mediaAttachment = await this.downloadMediaContent(
-                messageContent.url,
-                messageContent.info.mimetype,
+                mediaUrl,
+                mimeType,
                 fileName,
+              );
+
+              this.runtime.logger.info(
+                `🔍 [DEBUG] downloadMediaContent returned: ${mediaAttachment ? 'SUCCESS' : 'NULL'} - ${mediaAttachment ? JSON.stringify({id: mediaAttachment.id, title: mediaAttachment.title, contentType: mediaAttachment.contentType, urlLength: mediaAttachment.url?.length}) : 'null'}`,
               );
 
               if (mediaAttachment) {
                 attachments.push(mediaAttachment);
+                this.runtime.logger.info(
+                  `🔍 [DEBUG] Added attachment to array. Current attachments length: ${attachments.length}`,
+                );
                 messageText += `\n\n✅ Image successfully processed and available for analysis.`;
                 this.runtime.logger.success(
                   `Successfully downloaded and attached image: ${mediaAttachment.title}`,
@@ -857,19 +1019,19 @@ export class MatrixService extends Service implements IMatrixService {
               } else {
                 messageText += `\n\n⚠️ Image could not be processed - content may not be accessible.`;
                 this.runtime.logger.warn(
-                  `Failed to download image content but no error thrown: ${messageContent.url}`,
+                  `🔍 [DEBUG] Failed to download image content but no error thrown: ${mediaUrl}`,
                 );
               }
             } catch (error) {
               messageText += `\n\n❌ Error processing image - content not accessible for analysis.`;
               this.runtime.logger.error(
-                `Critical error downloading image content from ${messageContent.url}: ${error}`,
+                `🔍 [DEBUG] Critical error downloading image content from ${mediaUrl}: ${error}`,
               );
             }
           } else {
-            messageText += `\n\n⚠️ Image metadata incomplete - cannot process for analysis.`;
+            messageText += `\n\n⚠️ Image cannot be processed - no valid content type detected.`;
             this.runtime.logger.warn(
-              `Image message missing MIME type info: ${messageContent.url}`,
+              `Unable to determine content type for image: ${mediaUrl}`,
             );
           }
         } else {
@@ -879,6 +1041,45 @@ export class MatrixService extends Service implements IMatrixService {
             messageText += ` (${messageContent.url})`;
           }
         }
+      }
+
+      this.runtime.logger.info(
+        `🔍 [DEBUG] Final attachments array before sending to agent: length=${attachments.length}, contents=${JSON.stringify(attachments.map(a => ({id: a.id, title: a.title, contentType: a.contentType, urlLength: a.url?.length})))}`,
+      );
+
+      // Enhanced attachment debugging for VLM troubleshooting
+      if (attachments.length > 0) {
+        this.runtime.logger.info(`🔍 [DEBUG] AGENT ATTACHMENT DETAILS:`);
+        attachments.forEach((attachment, index) => {
+          this.runtime.logger.info(`🔍 [DEBUG] Attachment ${index + 1}:`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ID: ${attachment.id}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Title: ${attachment.title}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ContentType: ${attachment.contentType}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Description: ${attachment.description}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Text: ${attachment.text}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Source: ${attachment.source}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Type: ${attachment.url?.startsWith('data:') ? 'Data URL' : 'Regular URL'}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Length: ${attachment.url?.length || 0} characters`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Preview: ${attachment.url?.substring(0, 200)}...`);
+          
+          if (attachment.url?.startsWith('data:')) {
+            const [metadata, base64Part] = attachment.url.split(',');
+            this.runtime.logger.info(`🔍 [DEBUG]   - Data URL Metadata: ${metadata}`);
+            this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Data Length: ${base64Part?.length || 0} characters`);
+            
+            // Test if base64 is valid and can be decoded
+            try {
+              const testBuffer = Buffer.from(base64Part || '', 'base64');
+              this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Decode Test: SUCCESS (${testBuffer.length} bytes)`);
+              
+              // Show first few bytes as hex for debugging
+              const firstBytes = testBuffer.slice(0, 16);
+              this.runtime.logger.info(`🔍 [DEBUG]   - First 16 bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+            } catch (decodeError) {
+              this.runtime.logger.error(`🔍 [DEBUG]   - Base64 Decode Test: FAILED - ${decodeError}`);
+            }
+          }
+        });
       }
 
       const memory: Memory = {
@@ -1054,9 +1255,10 @@ export class MatrixService extends Service implements IMatrixService {
           const mediaType = decryptedContent.msgtype.replace("m.", "");
           
           // For encrypted images, attempt to download content for VLM processing
+          this.runtime.logger.info(`🔍 [DEBUG] Checking encrypted image condition - msgtype: "${decryptedContent.msgtype}", expectedType: "${MATRIX_MESSAGE_TYPES.IMAGE}", url: "${decryptedContent.url}", hasUrl: ${!!decryptedContent.url}`);
           if (decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && decryptedContent.url) {
             this.runtime.logger.debug(
-              `Processing encrypted image message for VLM: ${decryptedContent.url}`,
+              `🔍 [DEBUG] Processing encrypted image message for VLM: ${decryptedContent.url}`,
             );
 
             // Always indicate that an encrypted image is present in the message text
@@ -1067,21 +1269,73 @@ export class MatrixService extends Service implements IMatrixService {
             
             messageText = `🔐📷 **ENCRYPTED IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${decryptedContent.body || "User shared an encrypted image"}`;
 
-            // Attempt to download the encrypted image content
-            if (decryptedContent.info?.mimetype) {
+            this.runtime.logger.info(
+              `🔍 [DEBUG] Encrypted image message details - fileName: ${fileName}, url: ${decryptedContent.url}, originalMimeType: ${decryptedContent.info?.mimetype || 'undefined'}`,
+            );
+
+            // Attempt to download the encrypted image content  
+            let mimeType = decryptedContent.info?.mimetype;
+            
+            // If no mimetype provided, try to detect from URL extension
+            if (!mimeType && decryptedContent.url) {
+              const urlLower = decryptedContent.url.toLowerCase();
+              this.runtime.logger.info(
+                `🔍 [DEBUG] No mimetype provided for encrypted image, detecting from URL: ${urlLower}`,
+              );
+              
+              if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) {
+                mimeType = 'image/jpeg';
+              } else if (urlLower.includes('.png')) {
+                mimeType = 'image/png';
+              } else if (urlLower.includes('.gif')) {
+                mimeType = 'image/gif';
+              } else if (urlLower.includes('.webp')) {
+                mimeType = 'image/webp';
+              } else if (urlLower.includes('.bmp')) {
+                mimeType = 'image/bmp';
+              } else if (urlLower.includes('.svg')) {
+                mimeType = 'image/svg+xml';
+              } else {
+                // Default fallback for unknown image types
+                mimeType = 'image/jpeg';
+              }
+              
+              this.runtime.logger.info(
+                `🔍 [DEBUG] Encrypted image MIME type detection result: ${mimeType}`,
+              );
+              
+              if (!decryptedContent.info?.mimetype) {
+                this.runtime.logger.info(
+                  `No mimetype provided for encrypted image, detected from URL: ${mimeType}`,
+                );
+              }
+            } else {
+              this.runtime.logger.info(
+                `🔍 [DEBUG] Using provided mimetype for encrypted image: ${mimeType}`,
+              );
+            }
+            
+            if (mimeType) {
               try {
                 this.runtime.logger.info(
-                  `Downloading encrypted image for VLM processing: ${fileName} (${decryptedContent.info.mimetype})`,
+                  `🔍 [DEBUG] About to call downloadMediaContent for encrypted image with: url=${decryptedContent.url}, mimeType=${mimeType}, fileName=${fileName}`,
                 );
 
                 const mediaAttachment = await this.downloadMediaContent(
                   decryptedContent.url,
-                  decryptedContent.info.mimetype,
+                  mimeType,
                   fileName,
+                );
+
+                this.runtime.logger.info(
+                  `🔍 [DEBUG] downloadMediaContent for encrypted image returned: ${mediaAttachment ? 'SUCCESS' : 'NULL'} - ${mediaAttachment ? JSON.stringify({id: mediaAttachment.id, title: mediaAttachment.title, contentType: mediaAttachment.contentType, urlLength: mediaAttachment.url?.length}) : 'null'}`,
                 );
 
                 if (mediaAttachment) {
                   attachments.push(mediaAttachment);
+                  this.runtime.logger.info(
+                    `🔍 [DEBUG] Added encrypted image attachment to array. Current attachments length: ${attachments.length}`,
+                  );
                   messageText += `\n\n✅ Encrypted image successfully decrypted and processed for analysis.`;
                   this.runtime.logger.success(
                     `Successfully downloaded and attached encrypted image: ${mediaAttachment.title}`,
@@ -1099,9 +1353,9 @@ export class MatrixService extends Service implements IMatrixService {
                 );
               }
             } else {
-              messageText += `\n\n⚠️ Encrypted image metadata incomplete - cannot process for analysis.`;
+              messageText += `\n\n⚠️ Encrypted image cannot be processed - no valid content type detected.`;
               this.runtime.logger.warn(
-                `Encrypted image message missing MIME type info: ${decryptedContent.url}`,
+                `Unable to determine content type for encrypted image: ${decryptedContent.url}`,
               );
             }
           } else {
@@ -1112,6 +1366,45 @@ export class MatrixService extends Service implements IMatrixService {
             }
           }
         }
+      }
+
+      this.runtime.logger.info(
+        `🔍 [DEBUG] Final encrypted message attachments array before sending to agent: length=${attachments.length}, contents=${JSON.stringify(attachments.map(a => ({id: a.id, title: a.title, contentType: a.contentType, urlLength: a.url?.length})))}`,
+      );
+
+      // Enhanced encrypted attachment debugging for VLM troubleshooting
+      if (attachments.length > 0) {
+        this.runtime.logger.info(`🔍 [DEBUG] AGENT ENCRYPTED ATTACHMENT DETAILS:`);
+        attachments.forEach((attachment, index) => {
+          this.runtime.logger.info(`🔍 [DEBUG] Encrypted Attachment ${index + 1}:`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ID: ${attachment.id}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Title: ${attachment.title}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - ContentType: ${attachment.contentType}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Description: ${attachment.description}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Text: ${attachment.text}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - Source: ${attachment.source}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Type: ${attachment.url?.startsWith('data:') ? 'Data URL' : 'Regular URL'}`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Length: ${attachment.url?.length || 0} characters`);
+          this.runtime.logger.info(`🔍 [DEBUG]   - URL Preview: ${attachment.url?.substring(0, 200)}...`);
+          
+          if (attachment.url?.startsWith('data:')) {
+            const [metadata, base64Part] = attachment.url.split(',');
+            this.runtime.logger.info(`🔍 [DEBUG]   - Data URL Metadata: ${metadata}`);
+            this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Data Length: ${base64Part?.length || 0} characters`);
+            
+            // Test if base64 is valid and can be decoded
+            try {
+              const testBuffer = Buffer.from(base64Part || '', 'base64');
+              this.runtime.logger.info(`🔍 [DEBUG]   - Base64 Decode Test: SUCCESS (${testBuffer.length} bytes)`);
+              
+              // Show first few bytes as hex for debugging
+              const firstBytes = testBuffer.slice(0, 16);
+              this.runtime.logger.info(`🔍 [DEBUG]   - First 16 bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')}`);
+            } catch (decodeError) {
+              this.runtime.logger.error(`🔍 [DEBUG]   - Base64 Decode Test: FAILED - ${decodeError}`);
+            }
+          }
+        });
       }
 
       const memory: Memory = {
