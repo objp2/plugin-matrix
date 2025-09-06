@@ -3,6 +3,7 @@ import {
   type IAgentRuntime,
   type Memory,
   type State,
+  type HandlerCallback,
   logger,
 } from "@elizaos/core";
 import { MatrixService } from "../service";
@@ -21,6 +22,8 @@ export const listRooms: Action = {
     runtime: IAgentRuntime,
     message: Memory,
     state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback,
   ): Promise<boolean> => {
     try {
       const service = runtime.getService(
@@ -36,6 +39,15 @@ export const listRooms: Action = {
 
       if (joinedRooms.length === 0) {
         logger.info("No rooms joined");
+
+        // Send response to make it visible to the agent
+        if (callback) {
+          await callback({
+            text: "I haven't joined any Matrix rooms yet.",
+            source: "matrix",
+          });
+        }
+
         return true;
       }
 
@@ -87,6 +99,14 @@ export const listRooms: Action = {
         state.values.rooms = joinedRooms;
         state.values.roomsList = roomsText;
         state.values.roomCount = joinedRooms.length;
+      }
+
+      // Make the room list visible to the agent by sending it as a response
+      if (callback) {
+        await callback({
+          text: `Here are all the Matrix rooms I've joined (${joinedRooms.length} total):\n\n${roomsText}`,
+          source: "matrix",
+        });
       }
 
       return true;
