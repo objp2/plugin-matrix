@@ -1019,7 +1019,7 @@ export class MatrixService extends Service implements IMatrixService {
           };
 
           this.runtime.emitEvent(
-            [MatrixEventTypes.ROOM_JOINED, EventType.WORLD_CONNECTED],
+            [MatrixEventTypes.ROOM_JOINED, EventType.WORLD_JOINED],
             {
               runtime: this.runtime,
               worldId: roomUUID,
