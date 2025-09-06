@@ -16,6 +16,8 @@ export const sendMessage: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info("🔍 SEND_MESSAGE validate method called - this confirms validation is running");
+    
     // Check if Matrix service is available
     const service = runtime.getService(
       MatrixService.serviceType,

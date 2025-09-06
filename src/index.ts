@@ -40,9 +40,15 @@ const matrixPlugin: Plugin = {
   providers: [roomStateProvider, userInfoProvider],
   // tests: [new MatrixTestSuite()],
   init: async (_config: Record<string, string>, runtime: IAgentRuntime) => {
+    logger.info("Matrix plugin init called - starting initialization");
+    
     const homeserverUrl = runtime.getSetting("MATRIX_HOMESERVER_URL") as string;
     const accessToken = runtime.getSetting("MATRIX_ACCESS_TOKEN") as string;
     const userId = runtime.getSetting("MATRIX_USER_ID") as string;
+
+    logger.debug("Matrix plugin actions registered");
+    logger.debug(`Action count: ${matrixPlugin.actions?.length || 0}`);
+    logger.debug(`Action names: ${(matrixPlugin.actions?.map(a => a.name) || []).join(', ')}`);
 
     if (!homeserverUrl || homeserverUrl.trim() === "") {
       logger.warn(
@@ -74,6 +80,22 @@ const matrixPlugin: Plugin = {
     if (homeserverUrl && accessToken && userId) {
       logger.success("Matrix plugin initialized successfully");
     }
+
+    // Add debugging to check service registration
+    setTimeout(async () => {
+      try {
+        const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+        if (service) {
+          const status = service.getServiceStatus();
+          logger.info("Matrix service found in runtime after init");
+          logger.info(`Service ready: ${status.isReady}, has client: ${status.hasClient}`);
+        } else {
+          logger.warn(`Matrix service NOT found in runtime after init - service type: ${MatrixService.serviceType}`);
+        }
+      } catch (error) {
+        logger.error("Error checking Matrix service after init:", String(error));
+      }
+    }, 1000);
   },
 };
 

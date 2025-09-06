@@ -16,6 +16,8 @@ export const listRooms: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info("🔍 LIST_ROOMS validate method called - this confirms validation is running");
+    
     // Check if Matrix service is available
     const service = runtime.getService(
       MatrixService.serviceType,

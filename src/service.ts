@@ -61,6 +61,8 @@ export class MatrixService extends Service implements IMatrixService {
   constructor(runtime: IAgentRuntime) {
     super(runtime);
 
+    logger.info("🚀 MatrixService constructor called - service is being initialized");
+
     this.matrixSettings = {};
     if (this.runtime.character.settings?.matrix) {
       this.matrixSettings = this.runtime.character.settings

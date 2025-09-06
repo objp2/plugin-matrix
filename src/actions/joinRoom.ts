@@ -15,6 +15,8 @@ export const joinRoom: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    logger.info("🔍 JOIN_ROOM validate method called - this confirms validation is running");
+    
     // Check if Matrix service is available
     const service = runtime.getService(
       MatrixService.serviceType,
