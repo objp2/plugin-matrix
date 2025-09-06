@@ -867,6 +867,7 @@ export class MatrixService extends Service implements IMatrixService {
         const mediaType = messageContent.msgtype.replace("m.", "");
         
         // For images, attempt to download content for VLM processing
+        this.runtime.logger.info(`🔍 [DEBUG] Checking image condition - msgtype: "${messageContent.msgtype}", expectedType: "${MATRIX_MESSAGE_TYPES.IMAGE}", url: "${messageContent.url}", hasUrl: ${!!messageContent.url}`);
         if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && messageContent.url) {
           this.runtime.logger.debug(
             `🔍 [DEBUG] Processing image message for VLM: ${messageContent.url}`,
@@ -1155,6 +1156,7 @@ export class MatrixService extends Service implements IMatrixService {
           const mediaType = decryptedContent.msgtype.replace("m.", "");
           
           // For encrypted images, attempt to download content for VLM processing
+          this.runtime.logger.info(`🔍 [DEBUG] Checking encrypted image condition - msgtype: "${decryptedContent.msgtype}", expectedType: "${MATRIX_MESSAGE_TYPES.IMAGE}", url: "${decryptedContent.url}", hasUrl: ${!!decryptedContent.url}`);
           if (decryptedContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && decryptedContent.url) {
             this.runtime.logger.debug(
               `🔍 [DEBUG] Processing encrypted image message for VLM: ${decryptedContent.url}`,
