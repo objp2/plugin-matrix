@@ -99,27 +99,29 @@ export class MatrixService extends Service implements IMatrixService {
         return;
       }
 
-      // Initialize Matrix client
+      // Initialize Matrix client with proper encryption setup
       const storage = new SimpleFsStorageProvider("./matrix-storage.json");
-      this.client = new MatrixClient(
-        config.MATRIX_HOMESERVER_URL,
-        config.MATRIX_ACCESS_TOKEN,
-        storage,
-      );
+      let cryptoStore = null;
 
       // Set up encryption if enabled
       if (config.MATRIX_ENCRYPTION_ENABLED) {
         try {
-          const cryptoProvider = new RustSdkCryptoStorageProvider(
+          cryptoStore = new RustSdkCryptoStorageProvider(
             "./matrix-crypto-store",
           );
-          this.client.setStorageProvider(cryptoProvider);
           logger.info("Matrix encryption enabled with crypto storage provider");
         } catch (error) {
           logger.warn(`Failed to set up encryption storage provider: ${error}`);
           logger.warn("Continuing without encryption support");
         }
       }
+
+      this.client = new MatrixClient(
+        config.MATRIX_HOMESERVER_URL,
+        config.MATRIX_ACCESS_TOKEN,
+        storage,
+        cryptoStore,
+      );
 
       // Enable auto-join for room invites
       AutojoinRoomsMixin.setupOnClient(this.client);
@@ -282,8 +284,16 @@ export class MatrixService extends Service implements IMatrixService {
     try {
       logger.info("Initializing Matrix end-to-end encryption...");
 
-      // Note: The RustSdkCryptoStorageProvider should handle most of the crypto setup
-      // Additional device verification and key management would be handled by the SDK
+      // Check if crypto is available on the client
+      const clientWithCrypto = this.client as any;
+      if (clientWithCrypto.crypto) {
+        logger.info("Crypto client detected - encryption should be functional");
+        
+        // The RustSdkCryptoStorageProvider and CryptoClient should handle
+        // automatic decryption of encrypted messages
+      } else {
+        logger.warn("No crypto client found - encryption may not be available");
+      }
 
       logger.success("Matrix encryption initialized successfully");
     } catch (error) {
@@ -678,20 +688,37 @@ export class MatrixService extends Service implements IMatrixService {
       let isDecrypted = false;
 
       try {
+        // Log the raw event content for debugging
+        this.runtime.logger.debug(
+          `Encrypted event content: ${JSON.stringify(event.content)}`,
+        );
+
         // Check if the event has already been decrypted by the SDK
-        if (event.content && event.content.msgtype && event.content.body) {
+        // A decrypted event should have msgtype and body in the content
+        if (event.content && 
+            typeof event.content === 'object' && 
+            event.content.msgtype && 
+            event.content.body) {
           // Message has been decrypted successfully
           decryptedContent = event.content;
           messageText = decryptedContent.body;
           isDecrypted = true;
           this.runtime.logger.debug(
-            `Successfully decrypted message from ${event.sender} in room ${roomId}`,
+            `Successfully decrypted message from ${event.sender} in room ${roomId}: ${messageText.substring(0, 100)}...`,
           );
         } else {
-          // Try to get the decrypted content if available
+          // Message could not be decrypted or decryption is in progress
           this.runtime.logger.debug(
-            `Message from ${event.sender} in room ${roomId} could not be decrypted`,
+            `Message from ${event.sender} in room ${roomId} could not be decrypted. ` +
+            `Content type: ${typeof event.content}, has msgtype: ${!!event.content?.msgtype}, has body: ${!!event.content?.body}`,
           );
+          
+          // Check if this is actually an encryption error vs a decryption in progress
+          if (event.content && event.content.algorithm) {
+            this.runtime.logger.debug(
+              `Encrypted with algorithm: ${event.content.algorithm}`,
+            );
+          }
         }
       } catch (decryptError) {
         this.runtime.logger.warn(
