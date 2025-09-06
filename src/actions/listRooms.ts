@@ -16,7 +16,13 @@ export const listRooms: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
-    return true; // No specific validation needed
+    // Check if Matrix service is available
+    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    if (!service?.client) {
+      return false;
+    }
+    
+    return true; // No specific content validation needed for listing rooms
   },
   handler: async (
     runtime: IAgentRuntime,

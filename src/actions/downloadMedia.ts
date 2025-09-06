@@ -19,7 +19,19 @@ export const downloadMedia: Action = {
     runtime: IAgentRuntime,
     message: Memory,
   ): Promise<boolean> => {
+    // Check if Matrix service is available
+    const service = runtime.getService(MatrixService.serviceType) as MatrixService;
+    if (!service?.client) {
+      return false;
+    }
+
     const content = message.content;
+    // If no content provided, this is likely an availability check - return true if service is ready
+    if (!content || Object.keys(content).length === 0) {
+      return true;
+    }
+    
+    // If content is provided, validate required parameters
     return !!(content.mxcUrl && content.outputPath);
   },
   handler: async (
