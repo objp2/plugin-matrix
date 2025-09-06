@@ -790,6 +790,7 @@ export class MatrixService extends Service implements IMatrixService {
       }
 
       this.runtime.logger.info(`🔍 [DEBUG] Message content - msgtype: ${messageContent.msgtype}, body: ${messageContent.body?.substring(0, 100)}..., url: ${messageContent.url || 'none'}`);
+      this.runtime.logger.info(`🔍 [DEBUG] Full message content structure: ${JSON.stringify(messageContent, null, 2)}`);
 
       // Handle supported message types
       const supportedTypes = [
@@ -867,10 +868,10 @@ export class MatrixService extends Service implements IMatrixService {
         const mediaType = messageContent.msgtype.replace("m.", "");
         
         // For images, attempt to download content for VLM processing
-        this.runtime.logger.info(`🔍 [DEBUG] Checking image condition - msgtype: "${messageContent.msgtype}", expectedType: "${MATRIX_MESSAGE_TYPES.IMAGE}", url: "${messageContent.url}", hasUrl: ${!!messageContent.url}`);
-        if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && messageContent.url) {
+        this.runtime.logger.info(`🔍 [DEBUG] Checking image condition - msgtype: "${messageContent.msgtype}", expectedType: "${MATRIX_MESSAGE_TYPES.IMAGE}", url: "${messageContent.url}", file: ${messageContent.file ? 'present' : 'none'}, hasUrl: ${!!messageContent.url}, hasFile: ${!!messageContent.file}`);
+        if (messageContent.msgtype === MATRIX_MESSAGE_TYPES.IMAGE && (messageContent.url || messageContent.file)) {
           this.runtime.logger.debug(
-            `🔍 [DEBUG] Processing image message for VLM: ${messageContent.url}`,
+            `🔍 [DEBUG] Processing image message for VLM: ${messageContent.url || messageContent.file?.url || 'no URL found'}`,
           );
 
           // Always indicate that an image is present in the message text
@@ -881,16 +882,35 @@ export class MatrixService extends Service implements IMatrixService {
           
           messageText = `📷 **IMAGE ATTACHED**: ${fileName}${dimensionInfo}${sizeInfo}\n\n${messageContent.body || "User shared an image"}`;
 
+          // Determine the media URL - check both url and file fields
+          let mediaUrl: string;
+          let isEncrypted = false;
+          
+          if (messageContent.url) {
+            // Standard non-encrypted image
+            mediaUrl = messageContent.url;
+            this.runtime.logger.info(`🔍 [DEBUG] Using standard URL field: ${mediaUrl}`);
+          } else if (messageContent.file?.url) {
+            // Encrypted image content
+            mediaUrl = messageContent.file.url;
+            isEncrypted = true;
+            this.runtime.logger.info(`🔍 [DEBUG] Using encrypted file URL field: ${mediaUrl}`);
+          } else {
+            this.runtime.logger.error(`🔍 [DEBUG] No valid URL found in message content`);
+            messageText += `\n\n❌ Error: No valid image URL found in message`;
+            return; // Skip processing if no URL found
+          }
+
           this.runtime.logger.info(
-            `🔍 [DEBUG] Image message details - fileName: ${fileName}, url: ${messageContent.url}, originalMimeType: ${messageContent.info?.mimetype || 'undefined'}`,
+            `🔍 [DEBUG] Image message details - fileName: ${fileName}, mediaUrl: ${mediaUrl}, isEncrypted: ${isEncrypted}, originalMimeType: ${messageContent.info?.mimetype || 'undefined'}`,
           );
 
           // Attempt to download the image content
           let mimeType = messageContent.info?.mimetype;
           
           // If no mimetype provided, try to detect from URL extension
-          if (!mimeType && messageContent.url) {
-            const urlLower = messageContent.url.toLowerCase();
+          if (!mimeType && mediaUrl) {
+            const urlLower = mediaUrl.toLowerCase();
             this.runtime.logger.info(
               `🔍 [DEBUG] No mimetype provided, detecting from URL: ${urlLower}`,
             );
@@ -930,11 +950,11 @@ export class MatrixService extends Service implements IMatrixService {
           if (mimeType) {
             try {
               this.runtime.logger.info(
-                `🔍 [DEBUG] About to call downloadMediaContent with: url=${messageContent.url}, mimeType=${mimeType}, fileName=${fileName}`,
+                `🔍 [DEBUG] About to call downloadMediaContent with: url=${mediaUrl}, mimeType=${mimeType}, fileName=${fileName}, isEncrypted=${isEncrypted}`,
               );
 
               const mediaAttachment = await this.downloadMediaContent(
-                messageContent.url,
+                mediaUrl,
                 mimeType,
                 fileName,
               );
@@ -955,19 +975,19 @@ export class MatrixService extends Service implements IMatrixService {
               } else {
                 messageText += `\n\n⚠️ Image could not be processed - content may not be accessible.`;
                 this.runtime.logger.warn(
-                  `🔍 [DEBUG] Failed to download image content but no error thrown: ${messageContent.url}`,
+                  `🔍 [DEBUG] Failed to download image content but no error thrown: ${mediaUrl}`,
                 );
               }
             } catch (error) {
               messageText += `\n\n❌ Error processing image - content not accessible for analysis.`;
               this.runtime.logger.error(
-                `🔍 [DEBUG] Critical error downloading image content from ${messageContent.url}: ${error}`,
+                `🔍 [DEBUG] Critical error downloading image content from ${mediaUrl}: ${error}`,
               );
             }
           } else {
             messageText += `\n\n⚠️ Image cannot be processed - no valid content type detected.`;
             this.runtime.logger.warn(
-              `Unable to determine content type for image: ${messageContent.url}`,
+              `Unable to determine content type for image: ${mediaUrl}`,
             );
           }
         } else {
